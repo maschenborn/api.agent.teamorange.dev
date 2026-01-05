@@ -30,7 +30,16 @@ emailWebhookRouter.post('/', async (req: Request, res: Response) => {
   }
 
   const emailId = event.data.email_id;
-  logger.info({ emailId, from: event.data.from, subject: event.data.subject, hasText: !!event.data.text, hasHtml: !!event.data.html }, 'Received email webhook');
+  const fromAddress = event.data.from.toLowerCase();
+
+  logger.info({ emailId, from: fromAddress, subject: event.data.subject, hasText: !!event.data.text, hasHtml: !!event.data.html }, 'Received email webhook');
+
+  // LOOP PROTECTION: Ignore emails from our own domain to prevent infinite loops
+  if (fromAddress.includes('@agent.teamorange.dev')) {
+    logger.warn({ emailId, from: fromAddress }, 'Ignoring email from own domain (loop protection)');
+    res.status(200).json({ status: 'ignored', reason: 'loop protection - email from own domain' });
+    return;
+  }
 
   // Acknowledge webhook immediately
   res.status(200).json({ status: 'processing', emailId });
