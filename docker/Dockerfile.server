@@ -1,0 +1,28 @@
+# Webhook Server Container
+# Runs the Express webhook server that receives Resend emails
+
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install docker CLI for container management
+RUN apk add --no-cache docker-cli
+
+# Copy package files
+COPY package*.json ./
+
+# Install dependencies
+RUN npm ci --only=production
+
+# Copy compiled source
+COPY dist/ ./dist/
+
+# Create non-root user
+RUN addgroup -g 1001 -S nodejs && \
+    adduser -S nodejs -u 1001 -G nodejs
+
+USER nodejs
+
+EXPOSE 3000
+
+CMD ["node", "dist/index.js"]

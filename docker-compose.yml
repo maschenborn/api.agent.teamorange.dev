@@ -1,0 +1,81 @@
+# ===========================================
+# Claude Remote Agent - Coolify Deployment
+# ===========================================
+#
+# Coolify-Konfiguration:
+# - Service Type: Docker Compose
+# - Domain: api.agent.teamorange.dev
+# - Port: 3000
+#
+# Voraussetzungen auf dem Coolify-Server:
+# 1. Docker Socket muss gemountet sein
+# 2. Agent Sandbox Image muss gebaut sein:
+#    docker build -t claude-agent-sandbox:latest -f docker/Dockerfile docker/
+# 3. Claude Credentials müssen unter /opt/claude/.credentials.json liegen
+#
+# ===========================================
+
+services:
+  webhook-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: claude-remote-agent
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      # Resend
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - RESEND_WEBHOOK_SECRET=${RESEND_WEBHOOK_SECRET}
+      - AGENT_EMAIL_FROM=${AGENT_EMAIL_FROM}
+      # Claude
+      - CLAUDE_SESSION_PATH=/app/.claude
+      # GitHub
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - DEMOPROJEKT_REPO_URL=${DEMOPROJEKT_REPO_URL:-}
+      # Agent
+      - AGENT_DOCKER_IMAGE=${AGENT_DOCKER_IMAGE:-claude-agent-sandbox:latest}
+      - MAX_AGENT_TURNS=${MAX_AGENT_TURNS:-50}
+      - AGENT_TIMEOUT_MS=${AGENT_TIMEOUT_MS:-300000}
+      # Git
+      - GIT_EMAIL=${GIT_EMAIL:-agent@teamorange.dev}
+      - GIT_NAME=${GIT_NAME:-Claude Agent}
+    volumes:
+      # Docker Socket für Container-Spawning
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Claude Credentials (auf Server unter /opt/claude ablegen)
+      - /opt/claude:/app/.claude:ro
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    labels:
+      # Coolify Labels (optional, Coolify setzt diese automatisch)
+      - "coolify.managed=true"
+
+# ===========================================
+# Coolify Setup-Schritte:
+# ===========================================
+#
+# 1. Repository in Coolify hinzufügen
+# 2. Build Pack: Docker Compose
+# 3. Domain: api.agent.teamorange.dev
+# 4. Environment Variables in Coolify UI setzen
+# 5. Deploy
+#
+# 6. SSH auf Server und Agent Sandbox bauen:
+#    cd /opt/claude-remote-agent
+#    docker build -t claude-agent-sandbox:latest -f docker/Dockerfile docker/
+#
+# 7. Claude Credentials auf Server ablegen:
+#    mkdir -p /opt/claude
+#    # .credentials.json von lokalem Mac kopieren
+#
+# 8. Resend Webhook konfigurieren:
+#    URL: https://api.agent.teamorange.dev/webhook/email
+#    Events: email.received

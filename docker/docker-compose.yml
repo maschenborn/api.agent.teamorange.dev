@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  webhook-server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.server
+    container_name: claude-remote-agent-server
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - RESEND_WEBHOOK_SECRET=${RESEND_WEBHOOK_SECRET}
+      - AGENT_EMAIL_FROM=${AGENT_EMAIL_FROM}
+      - CLAUDE_SESSION_PATH=${CLAUDE_SESSION_PATH}
+      - GITHUB_TOKEN=${GITHUB_TOKEN}
+      - DEMOPROJEKT_REPO_URL=${DEMOPROJEKT_REPO_URL}
+      - AGENT_DOCKER_IMAGE=claude-remote-agent-sandbox:latest
+      - MAX_AGENT_TURNS=${MAX_AGENT_TURNS:-50}
+      - AGENT_TIMEOUT_MS=${AGENT_TIMEOUT_MS:-300000}
+      - GIT_EMAIL=${GIT_EMAIL:-agent@claude-remote.local}
+      - GIT_NAME=${GIT_NAME:-Claude Remote Agent}
+    volumes:
+      # Mount Docker socket to spawn agent containers
+      - /var/run/docker.sock:/var/run/docker.sock
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+networks:
+  default:
+    name: claude-remote-agent-network
