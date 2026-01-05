@@ -55,8 +55,20 @@ services:
       retries: 3
       start_period: 10s
     labels:
-      # Coolify Labels (optional, Coolify setzt diese automatisch)
+      # Coolify Labels
       - "coolify.managed=true"
+      # Traefik Labels for reverse proxy
+      - "traefik.enable=true"
+      - "traefik.http.routers.webhook-server.rule=Host(`api.agent.teamorange.dev`)"
+      - "traefik.http.routers.webhook-server.entrypoints=https"
+      - "traefik.http.routers.webhook-server.tls=true"
+      - "traefik.http.services.webhook-server.loadbalancer.server.port=3000"
+    networks:
+      - coolify
+
+networks:
+  coolify:
+    external: true
 
 # ===========================================
 # Coolify Setup-Schritte:
