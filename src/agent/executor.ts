@@ -177,15 +177,15 @@ function stripDockerStreamHeaders(output: string): string {
 /**
  * Extract Claude's response text from JSON output.
  * Claude Code with --output-format json returns:
- * { "result": { "content": [{ "type": "text", "text": "..." }] } }
+ * { "type": "result", "subtype": "success", "result": "response text..." }
  */
 function extractClaudeResponse(output: string): string | null {
   // Clean Docker headers first
   const cleanOutput = stripDockerStreamHeaders(output);
 
   // Try to find and parse JSON output from Claude
-  // The JSON may be preceded by setup messages, so look for the JSON object
-  const jsonMatch = cleanOutput.match(/\{[\s\S]*"result"[\s\S]*"content"[\s\S]*\}/);
+  // Look for the result JSON object with type "result"
+  const jsonMatch = cleanOutput.match(/\{"type":"result"[\s\S]*\}/);
   if (!jsonMatch) {
     return null;
   }
@@ -193,7 +193,12 @@ function extractClaudeResponse(output: string): string | null {
   try {
     const parsed = JSON.parse(jsonMatch[0]);
 
-    // Extract text from result.content array
+    // The actual format: { "type": "result", "result": "text..." }
+    if (parsed.type === 'result' && typeof parsed.result === 'string') {
+      return parsed.result;
+    }
+
+    // Fallback: check for content array format (older versions)
     if (parsed.result?.content && Array.isArray(parsed.result.content)) {
       const textParts = parsed.result.content
         .filter((item: { type: string; text?: string }) => item.type === 'text' && item.text)
