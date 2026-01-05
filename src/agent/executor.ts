@@ -4,6 +4,7 @@ import { config } from '../config/index.js';
 import { logger } from '../utils/logger.js';
 import { AgentExecutionError } from '../utils/errors.js';
 import { getAgentForEmail, type AgentConfig } from '../agents/registry.js';
+import { getSessionPaths, hasClaudeSession, type SessionPaths } from '../session/index.js';
 
 const docker = new Docker();
 
@@ -12,11 +13,24 @@ export async function executeAgentTask(task: AgentTask): Promise<AgentResult> {
   const agentConfig = getAgentForEmail(task.recipient);
 
   logger.info(
-    { taskId: task.id, agentId: agentConfig.id, recipient: task.recipient },
+    { taskId: task.id, agentId: agentConfig.id, recipient: task.recipient, sessionId: task.sessionId },
     `Using agent: ${agentConfig.name}`
   );
 
   const containerName = `claude-agent-${agentConfig.id}-${task.id.substring(0, 8)}`;
+
+  // Get session paths if session ID is provided
+  let sessionPaths: SessionPaths | null = null;
+  let useResume = false;
+
+  if (task.sessionId) {
+    sessionPaths = getSessionPaths(agentConfig.id, task.sessionId);
+    useResume = await hasClaudeSession(agentConfig.id, task.sessionId);
+    logger.info(
+      { taskId: task.id, sessionId: task.sessionId, useResume, sessionPaths: sessionPaths.root },
+      'Using persistent session'
+    );
+  }
 
   logger.info({ taskId: task.id, containerName, agentId: agentConfig.id }, 'Starting agent container');
 
@@ -25,7 +39,10 @@ export async function executeAgentTask(task: AgentTask): Promise<AgentResult> {
 
   try {
     // Build environment variables
-    const envVars = buildEnvVars(task, agentConfig, agentPrompt);
+    const envVars = buildEnvVars(task, agentConfig, agentPrompt, useResume);
+
+    // Build bind mounts
+    const binds = buildBindMounts(sessionPaths);
 
     // Create container
     const container = await docker.createContainer({
@@ -41,9 +58,8 @@ export async function executeAgentTask(task: AgentTask): Promise<AgentResult> {
         AutoRemove: false,
         // Network for API access
         NetworkMode: 'bridge',
-        // Mount Claude session credentials (read-only, will be copied by entrypoint)
-        // Use claudeHostPath for Docker-in-Docker: this is the HOST path that Docker daemon can access
-        Binds: [`${config.claudeHostPath}:/host-claude:ro`],
+        // Mount session directories or fallback to old behavior
+        Binds: binds,
       },
       WorkingDir: '/workspace',
     });
@@ -121,13 +137,50 @@ Gib deine Antwort als reinen Text aus. Diese wird per E-Mail an den Absender ges
 `.trim();
 }
 
-function buildEnvVars(task: AgentTask, agentConfig: AgentConfig, prompt: string): string[] {
+/**
+ * Build bind mounts for the container
+ * With sessions: mount workspace and claude-home
+ * Without sessions: mount credentials read-only (legacy behavior)
+ */
+function buildBindMounts(sessionPaths: SessionPaths | null): string[] {
+  if (sessionPaths) {
+    // Session mode: mount persistent directories
+    // Use sessionsHostPath for Docker-in-Docker: this is the HOST path that Docker daemon can access
+    const hostRoot = sessionPaths.root.replace(config.sessionsPath, config.sessionsHostPath);
+
+    return [
+      // Workspace (read-write) - persistent across session
+      `${hostRoot}/workspace:/workspace`,
+      // Claude home (read-write) - contains sessions, settings, etc.
+      `${hostRoot}/claude-home:/home/agent/.claude`,
+      // Credentials from host (read-only) - for authentication
+      `${config.claudeHostPath}:/host-claude:ro`,
+    ];
+  }
+
+  // Legacy mode: just mount credentials
+  return [`${config.claudeHostPath}:/host-claude:ro`];
+}
+
+function buildEnvVars(task: AgentTask, agentConfig: AgentConfig, prompt: string, useResume: boolean): string[] {
   const envVars: string[] = [
     `AGENT_PROMPT=${prompt}`,
     `MAX_TURNS=${config.maxAgentTurns}`,
     `AGENT_ID=${agentConfig.id}`,
     `TASK_ID=${task.id}`,
   ];
+
+  // Session management
+  if (task.sessionId) {
+    envVars.push(`SESSION_ID=${task.sessionId}`);
+    // Tell entrypoint to skip credential copy (already in mounted claude-home)
+    envVars.push(`SKIP_CREDENTIAL_SETUP=true`);
+  }
+
+  if (useResume) {
+    // Tell entrypoint to use --resume
+    envVars.push(`USE_RESUME=true`);
+  }
 
   // Add Git credentials only if configured (for git-based agents)
   if (config.githubToken) {

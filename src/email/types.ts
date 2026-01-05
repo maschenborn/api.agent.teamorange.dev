@@ -53,6 +53,7 @@ export interface TaskReceivedParams {
   taskSummary: string;
   originalSubject: string;
   originalMessageId: string;
+  sessionId?: string;
 }
 
 export interface TaskCompletedParams {
@@ -61,6 +62,7 @@ export interface TaskCompletedParams {
   result: AgentResult;
   originalSubject: string;
   originalMessageId: string;
+  sessionId?: string;
 }
 
 export interface TaskFailedParams {
@@ -68,6 +70,7 @@ export interface TaskFailedParams {
   error: string;
   originalSubject: string;
   originalMessageId: string;
+  sessionId?: string;
 }
 
 export type RejectionReason = 'unclear' | 'harmful' | 'too_complex';

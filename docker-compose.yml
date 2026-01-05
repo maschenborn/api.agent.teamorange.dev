@@ -35,6 +35,9 @@ services:
       - CLAUDE_SESSION_PATH=/app/.claude
       # Host path for Docker-in-Docker bind mounts (where Docker daemon looks for files)
       - CLAUDE_HOST_PATH=/opt/claude
+      # Sessions (persistent Claude sessions for context across email threads)
+      - SESSIONS_PATH=/app/sessions
+      - SESSIONS_HOST_PATH=/opt/claude-sessions
       # GitHub
       - GITHUB_TOKEN=${GITHUB_TOKEN}
       - DEMOPROJEKT_REPO_URL=${DEMOPROJEKT_REPO_URL:-}
@@ -50,6 +53,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       # Claude Credentials (auf Server unter /opt/claude ablegen)
       - /opt/claude:/app/.claude:ro
+      # Persistent Sessions (read-write, contains session data for --resume)
+      - /opt/claude-sessions:/app/sessions
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
       interval: 30s
@@ -90,6 +95,10 @@ networks:
 #    mkdir -p /opt/claude
 #    # .credentials.json von lokalem Mac kopieren
 #
-# 8. Resend Webhook konfigurieren:
+# 8. Sessions-Verzeichnis erstellen:
+#    mkdir -p /opt/claude-sessions
+#    chmod 777 /opt/claude-sessions
+#
+# 9. Resend Webhook konfigurieren:
 #    URL: https://api.agent.teamorange.dev/webhook/email
 #    Events: email.received

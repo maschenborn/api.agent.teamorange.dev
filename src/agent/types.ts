@@ -8,6 +8,8 @@ export interface AgentTask {
   subject: string;
   messageId: string;
   createdAt: Date;
+  /** Session ID for persistent context */
+  sessionId?: string;
 }
 
 export interface AgentResult {

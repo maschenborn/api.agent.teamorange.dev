@@ -5,6 +5,8 @@ import { parseTaskFromEmail } from '../../agent/task-parser.js';
 import { executeAgentTask } from '../../agent/executor.js';
 import { analyzeTaskSafety } from '../../agent/safety-analyzer.js';
 import { logger } from '../../utils/logger.js';
+import { getOrCreateSession } from '../../session/index.js';
+import { getAgentForEmail } from '../../agents/registry.js';
 
 export const emailWebhookRouter = Router();
 
@@ -73,13 +75,35 @@ async function processEmailTask(event: ResendEmailReceivedEvent): Promise<void> 
     logger.info({ emailId }, 'Parsing task from email');
     const task = parseTaskFromEmail(fullEmail);
 
-    // 3. Safety analysis (before YOLO execution)
-    logger.info({ emailId, taskId: task.id }, 'Running safety analysis');
+    // 3. Get or create session for this email thread
+    const agentConfig = getAgentForEmail(task.recipient);
+    const inReplyTo = fullEmail.headers?.['in-reply-to'] || fullEmail.headers?.['In-Reply-To'];
+
+    logger.info({ emailId, agentId: agentConfig.id, inReplyTo, messageId: fullEmail.message_id }, 'Getting/creating session');
+
+    const { session, isNew } = await getOrCreateSession({
+      agentId: agentConfig.id,
+      messageId: fullEmail.message_id,
+      inReplyTo,
+      subject: fullEmail.subject,
+      sender: fullEmail.from,
+    });
+
+    logger.info(
+      { emailId, sessionId: session.id, isNew, threadLength: session.thread.messageIds.length },
+      isNew ? 'Created new session' : 'Continuing existing session'
+    );
+
+    // Add session ID to task
+    task.sessionId = session.id;
+
+    // 4. Safety analysis (before YOLO execution)
+    logger.info({ emailId, taskId: task.id, sessionId: session.id }, 'Running safety analysis');
     const safetyResult = await analyzeTaskSafety(task.description);
 
     if (!safetyResult.approved) {
       logger.warn(
-        { emailId, taskId: task.id, reason: safetyResult.reason, explanation: safetyResult.explanation },
+        { emailId, taskId: task.id, sessionId: session.id, reason: safetyResult.reason, explanation: safetyResult.explanation },
         'Task rejected by safety analysis'
       );
 
@@ -95,24 +119,25 @@ async function processEmailTask(event: ResendEmailReceivedEvent): Promise<void> 
       return; // Stop processing - don't execute rejected tasks
     }
 
-    logger.info({ emailId, taskId: task.id }, 'Safety analysis passed');
+    logger.info({ emailId, taskId: task.id, sessionId: session.id }, 'Safety analysis passed');
 
-    // 4. Send acknowledgment (only after safety check passes)
-    logger.info({ emailId, taskId: task.id }, 'Sending task received acknowledgment');
+    // 5. Send acknowledgment (only after safety check passes)
+    logger.info({ emailId, taskId: task.id, sessionId: session.id }, 'Sending task received acknowledgment');
     await emailClient.sendTaskReceived({
       to: fullEmail.from,
       taskSummary: task.summary,
       originalSubject: fullEmail.subject,
       originalMessageId: fullEmail.message_id,
+      sessionId: session.id,
     });
 
-    // 5. Execute agent in Docker container
-    logger.info({ emailId, taskId: task.id }, 'Executing agent task');
+    // 6. Execute agent in Docker container
+    logger.info({ emailId, taskId: task.id, sessionId: session.id }, 'Executing agent task');
     const result = await executeAgentTask(task);
 
-    // 6. Send results
+    // 7. Send results
     if (result.success) {
-      logger.info({ emailId, taskId: task.id }, 'Task completed successfully');
+      logger.info({ emailId, taskId: task.id, sessionId: session.id }, 'Task completed successfully');
       await emailClient.sendTaskCompleted({
         to: fullEmail.from,
         taskSummary: task.summary,
@@ -121,17 +146,20 @@ async function processEmailTask(event: ResendEmailReceivedEvent): Promise<void> 
           summary: result.summary,
           filesModified: result.filesModified,
           commitHash: result.commitHash,
+          modelsUsed: result.modelsUsed,
         },
         originalSubject: fullEmail.subject,
         originalMessageId: fullEmail.message_id,
+        sessionId: session.id,
       });
     } else {
-      logger.warn({ emailId, taskId: task.id, error: result.error }, 'Task failed');
+      logger.warn({ emailId, taskId: task.id, sessionId: session.id, error: result.error }, 'Task failed');
       await emailClient.sendTaskFailed({
         to: fullEmail.from,
         error: result.error || result.summary,
         originalSubject: fullEmail.subject,
         originalMessageId: fullEmail.message_id,
+        sessionId: session.id,
       });
     }
   } catch (error) {

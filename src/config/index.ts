@@ -9,6 +9,8 @@ function loadConfig(): Config {
     agentEmailFrom: process.env.AGENT_EMAIL_FROM,
     claudeSessionPath: process.env.CLAUDE_SESSION_PATH,
     claudeHostPath: process.env.CLAUDE_HOST_PATH,
+    sessionsPath: process.env.SESSIONS_PATH,
+    sessionsHostPath: process.env.SESSIONS_HOST_PATH,
     githubToken: process.env.GITHUB_TOKEN,
     demoprojektRepoUrl: process.env.DEMOPROJEKT_REPO_URL,
     agentDockerImage: process.env.AGENT_DOCKER_IMAGE,

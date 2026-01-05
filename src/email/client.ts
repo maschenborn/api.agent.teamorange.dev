@@ -12,6 +12,29 @@ import { taskReceivedTemplate } from './templates/task-received.js';
 import { taskCompletedTemplate } from './templates/task-completed.js';
 import { taskFailedTemplate } from './templates/task-failed.js';
 import { taskRejectedTemplate } from './templates/task-rejected.js';
+import { formatSessionTag, extractSessionIdFromSubject } from '../session/index.js';
+
+/**
+ * Build reply subject with session tag
+ * If subject already has session tag, keep it
+ * Otherwise append the new session tag
+ */
+function buildReplySubject(originalSubject: string, sessionId?: string): string {
+  // Check if subject already has a session tag
+  const existingSessionId = extractSessionIdFromSubject(originalSubject);
+  if (existingSessionId) {
+    // Subject already has session tag, use as-is
+    return originalSubject.startsWith('Re:') ? originalSubject : `Re: ${originalSubject}`;
+  }
+
+  // Add session tag if provided
+  const baseSubject = originalSubject.startsWith('Re:') ? originalSubject : `Re: ${originalSubject}`;
+  if (sessionId) {
+    return `${baseSubject} ${formatSessionTag(sessionId)}`;
+  }
+
+  return baseSubject;
+}
 
 export class EmailClient {
   private resend: Resend;
@@ -46,12 +69,14 @@ export class EmailClient {
   }
 
   async sendTaskReceived(params: TaskReceivedParams): Promise<string> {
-    logger.info({ to: params.to }, 'Sending task received acknowledgment');
+    logger.info({ to: params.to, sessionId: params.sessionId }, 'Sending task received acknowledgment');
+
+    const subject = buildReplySubject(params.originalSubject, params.sessionId);
 
     const { data, error } = await this.resend.emails.send({
       from: config.agentEmailFrom,
       to: params.to,
-      subject: `Re: ${params.originalSubject}`,
+      subject,
       html: taskReceivedTemplate(params),
       headers: {
         'In-Reply-To': params.originalMessageId,
@@ -63,17 +88,19 @@ export class EmailClient {
       throw new Error(`Failed to send task received email: ${error.message}`);
     }
 
-    logger.info({ emailId: data?.id }, 'Sent task received email');
+    logger.info({ emailId: data?.id, subject }, 'Sent task received email');
     return data?.id ?? '';
   }
 
   async sendTaskCompleted(params: TaskCompletedParams): Promise<string> {
-    logger.info({ to: params.to }, 'Sending task completed notification');
+    logger.info({ to: params.to, sessionId: params.sessionId }, 'Sending task completed notification');
+
+    const subject = buildReplySubject(params.originalSubject, params.sessionId);
 
     const { data, error } = await this.resend.emails.send({
       from: config.agentEmailFrom,
       to: params.to,
-      subject: `Re: ${params.originalSubject}`,
+      subject,
       html: taskCompletedTemplate(params),
       headers: {
         'In-Reply-To': params.originalMessageId,
@@ -85,17 +112,19 @@ export class EmailClient {
       throw new Error(`Failed to send task completed email: ${error.message}`);
     }
 
-    logger.info({ emailId: data?.id }, 'Sent task completed email');
+    logger.info({ emailId: data?.id, subject }, 'Sent task completed email');
     return data?.id ?? '';
   }
 
   async sendTaskFailed(params: TaskFailedParams): Promise<string> {
-    logger.warn({ to: params.to, error: params.error }, 'Sending task failed notification');
+    logger.warn({ to: params.to, error: params.error, sessionId: params.sessionId }, 'Sending task failed notification');
+
+    const subject = buildReplySubject(params.originalSubject, params.sessionId);
 
     const { data, error } = await this.resend.emails.send({
       from: config.agentEmailFrom,
       to: params.to,
-      subject: `Re: ${params.originalSubject}`,
+      subject,
       html: taskFailedTemplate(params),
       headers: {
         'In-Reply-To': params.originalMessageId,
@@ -107,7 +136,7 @@ export class EmailClient {
       throw new Error(`Failed to send task failed email: ${error.message}`);
     }
 
-    logger.info({ emailId: data?.id }, 'Sent task failed email');
+    logger.info({ emailId: data?.id, subject }, 'Sent task failed email');
     return data?.id ?? '';
   }
 
