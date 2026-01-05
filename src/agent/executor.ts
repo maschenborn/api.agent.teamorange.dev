@@ -157,14 +157,34 @@ function buildEnvVars(task: AgentTask, agentConfig: AgentConfig, prompt: string)
   return envVars;
 }
 
+/**
+ * Strip Docker multiplexed stream headers from output.
+ * Docker logs contain 8-byte headers: [stream_type, 0, 0, 0, size (4 bytes)]
+ * These appear as non-printable characters at the start of lines.
+ */
+function stripDockerStreamHeaders(output: string): string {
+  // Remove Docker stream header bytes (non-printable chars at line starts)
+  // The header is 8 bytes: type (1) + padding (3) + size (4)
+  return output
+    .split('\n')
+    .map((line) => {
+      // Strip leading non-printable characters and control codes
+      return line.replace(/^[\x00-\x08\x0B\x0C\x0E-\x1F]+/g, '');
+    })
+    .join('\n');
+}
+
 function parseAgentOutput(output: string, agentConfig: AgentConfig): AgentResult {
+  // Strip Docker stream headers first
+  const cleanOutput = stripDockerStreamHeaders(output);
+
   // Try to extract structured information from the output
-  const lines = output.split('\n').filter((line) => line.trim());
+  const lines = cleanOutput.split('\n').filter((line) => line.trim());
 
   // For simple agents (like test), just return the output as summary
-  // Filter out system/debug lines
+  // Filter out system/debug lines and entrypoint messages
   const responseLines = lines.filter((line) => {
-    // Skip git and system output
+    // Skip git, system output, and entrypoint messages
     return (
       !line.startsWith('[') &&
       !line.includes('→') &&
@@ -174,7 +194,13 @@ function parseAgentOutput(output: string, agentConfig: AgentConfig): AgentResult
       !line.includes('remote:') &&
       !line.includes('To https://') &&
       !line.includes('branch') &&
-      !line.match(/^[a-f0-9]+\.\.[a-f0-9]+/)
+      !line.match(/^[a-f0-9]+\.\.[a-f0-9]+/) &&
+      // Skip entrypoint setup messages
+      !line.includes('Setting up Claude Code credentials') &&
+      !line.includes('Credentials copied') &&
+      !line.includes('Starting Claude Code in') &&
+      !line.includes('Task:') &&
+      !line.includes('MODE')
     );
   });
 
