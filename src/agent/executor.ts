@@ -42,7 +42,8 @@ export async function executeAgentTask(task: AgentTask): Promise<AgentResult> {
         // Network for API access
         NetworkMode: 'bridge',
         // Mount Claude session credentials (read-only, will be copied by entrypoint)
-        Binds: [`${config.claudeSessionPath}:/host-claude:ro`],
+        // Use claudeHostPath for Docker-in-Docker: this is the HOST path that Docker daemon can access
+        Binds: [`${config.claudeHostPath}:/host-claude:ro`],
       },
       WorkingDir: '/workspace',
     });

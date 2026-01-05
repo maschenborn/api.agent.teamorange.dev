@@ -12,6 +12,8 @@ export const configSchema = z.object({
 
   // Claude Code Session (mounted from host ~/.claude/)
   claudeSessionPath: z.string().min(1),
+  // Host path for Claude credentials (needed for Docker-in-Docker bind mounts)
+  claudeHostPath: z.string().min(1).default('/opt/claude'),
 
   // GitHub (optional - only needed for git operations)
   githubToken: z.string().optional(),

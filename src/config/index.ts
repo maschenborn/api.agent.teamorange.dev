@@ -8,6 +8,7 @@ function loadConfig(): Config {
     resendWebhookSecret: process.env.RESEND_WEBHOOK_SECRET,
     agentEmailFrom: process.env.AGENT_EMAIL_FROM,
     claudeSessionPath: process.env.CLAUDE_SESSION_PATH,
+    claudeHostPath: process.env.CLAUDE_HOST_PATH,
     githubToken: process.env.GITHUB_TOKEN,
     demoprojektRepoUrl: process.env.DEMOPROJEKT_REPO_URL,
     agentDockerImage: process.env.AGENT_DOCKER_IMAGE,

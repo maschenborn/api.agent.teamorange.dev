@@ -33,6 +33,8 @@ services:
       - AGENT_EMAIL_FROM=${AGENT_EMAIL_FROM}
       # Claude
       - CLAUDE_SESSION_PATH=/app/.claude
+      # Host path for Docker-in-Docker bind mounts (where Docker daemon looks for files)
+      - CLAUDE_HOST_PATH=/opt/claude
       # GitHub
       - GITHUB_TOKEN=${GITHUB_TOKEN}
       - DEMOPROJEKT_REPO_URL=${DEMOPROJEKT_REPO_URL:-}

@@ -93,7 +93,7 @@ export async function analyzeTaskSafety(taskDescription: string): Promise<Safety
         NetworkMode: 'bridge',
         // Mount Claude session credentials
         Binds: [
-          `${config.claudeSessionPath}:/host-claude:ro`,
+          `${config.claudeHostPath}:/host-claude:ro`,
         ],
       },
       WorkingDir: '/workspace',
