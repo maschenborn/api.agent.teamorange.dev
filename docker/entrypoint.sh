@@ -38,16 +38,14 @@ fi
 
 # Build Claude Code command based on mode
 if [ "$ANALYSIS_MODE" = "true" ]; then
-    echo "Starting Claude Code in ANALYSIS mode (read-only)..."
-    echo "Task: ${AGENT_PROMPT:0:100}..."
-    # Analysis mode: NO --dangerously-skip-permissions
+    # Analysis mode: NO --dangerously-skip-permissions, JSON output
     exec claude -p "$AGENT_PROMPT" \
-        --max-turns "${MAX_TURNS:-1}"
+        --max-turns "${MAX_TURNS:-1}" \
+        --output-format json
 else
-    echo "Starting Claude Code in EXECUTION mode..."
-    echo "Task: ${AGENT_PROMPT:0:100}..."
-    # Execution mode: full autonomy
+    # Execution mode: full autonomy, JSON output
     exec claude -p "$AGENT_PROMPT" \
         --dangerously-skip-permissions \
-        --max-turns "${MAX_TURNS:-50}"
+        --max-turns "${MAX_TURNS:-50}" \
+        --output-format json
 fi

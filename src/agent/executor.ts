@@ -174,17 +174,64 @@ function stripDockerStreamHeaders(output: string): string {
     .join('\n');
 }
 
-function parseAgentOutput(output: string, agentConfig: AgentConfig): AgentResult {
-  // Strip Docker stream headers first
+/**
+ * Extract Claude's response text from JSON output.
+ * Claude Code with --output-format json returns:
+ * { "result": { "content": [{ "type": "text", "text": "..." }] } }
+ */
+function extractClaudeResponse(output: string): string | null {
+  // Clean Docker headers first
   const cleanOutput = stripDockerStreamHeaders(output);
 
-  // Try to extract structured information from the output
+  // Try to find and parse JSON output from Claude
+  // The JSON may be preceded by setup messages, so look for the JSON object
+  const jsonMatch = cleanOutput.match(/\{[\s\S]*"result"[\s\S]*"content"[\s\S]*\}/);
+  if (!jsonMatch) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    // Extract text from result.content array
+    if (parsed.result?.content && Array.isArray(parsed.result.content)) {
+      const textParts = parsed.result.content
+        .filter((item: { type: string; text?: string }) => item.type === 'text' && item.text)
+        .map((item: { text: string }) => item.text);
+      return textParts.join('\n');
+    }
+
+    return null;
+  } catch {
+    logger.warn({ output: jsonMatch[0].slice(0, 500) }, 'Failed to parse Claude JSON output');
+    return null;
+  }
+}
+
+function parseAgentOutput(output: string, agentConfig: AgentConfig): AgentResult {
+  // Try to extract Claude's response from JSON output
+  const claudeResponse = extractClaudeResponse(output);
+
+  if (claudeResponse) {
+    // Successfully parsed JSON output - use Claude's response directly
+    logger.info({ responseLength: claudeResponse.length }, 'Extracted Claude response from JSON');
+
+    return {
+      success: true,
+      summary: claudeResponse.slice(0, 3000),
+      filesModified: [],
+      output: output.slice(-5000),
+    };
+  }
+
+  // Fallback: parse raw output (for backwards compatibility or errors)
+  logger.warn('Could not parse JSON output, falling back to raw parsing');
+
+  const cleanOutput = stripDockerStreamHeaders(output);
   const lines = cleanOutput.split('\n').filter((line) => line.trim());
 
-  // For simple agents (like test), just return the output as summary
-  // Filter out system/debug lines and entrypoint messages
+  // Filter out system/debug lines
   const responseLines = lines.filter((line) => {
-    // Skip git, system output, and entrypoint messages
     return (
       !line.startsWith('[') &&
       !line.includes('→') &&
@@ -195,12 +242,9 @@ function parseAgentOutput(output: string, agentConfig: AgentConfig): AgentResult
       !line.includes('To https://') &&
       !line.includes('branch') &&
       !line.match(/^[a-f0-9]+\.\.[a-f0-9]+/) &&
-      // Skip entrypoint setup messages
       !line.includes('Setting up Claude Code credentials') &&
       !line.includes('Credentials copied') &&
-      !line.includes('Starting Claude Code in') &&
-      !line.includes('Task:') &&
-      !line.includes('MODE')
+      !line.includes('Task:')
     );
   });
 
@@ -215,7 +259,6 @@ function parseAgentOutput(output: string, agentConfig: AgentConfig): AgentResult
     filesModified.push(match[1]);
   }
 
-  // Use the filtered response as summary
   const summary = responseLines.join('\n').slice(-3000) || 'Aufgabe abgeschlossen';
 
   return {
