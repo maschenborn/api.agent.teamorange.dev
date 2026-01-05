@@ -4,6 +4,7 @@ export interface AgentTask {
   summary: string;
   emailId: string;
   sender: string;
+  recipient: string; // The email address this was sent TO (determines agent type)
   subject: string;
   messageId: string;
   createdAt: Date;

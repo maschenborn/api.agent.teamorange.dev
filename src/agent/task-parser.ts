@@ -14,7 +14,10 @@ export function parseTaskFromEmail(email: ReceivedEmail): AgentTask {
   // Create a concise summary (first 200 chars)
   const summary = body.trim().substring(0, 200) + (body.length > 200 ? '...' : '');
 
-  logger.info({ emailId: email.id, summary }, 'Parsed task from email');
+  // Get the primary recipient (determines which agent handles this)
+  const recipient = email.to[0] || 'unknown@agent.teamorange.dev';
+
+  logger.info({ emailId: email.id, summary, recipient }, 'Parsed task from email');
 
   return {
     id: randomUUID(),
@@ -22,6 +25,7 @@ export function parseTaskFromEmail(email: ReceivedEmail): AgentTask {
     summary,
     emailId: email.id,
     sender: email.from,
+    recipient,
     subject: email.subject,
     messageId: email.message_id,
     createdAt: new Date(email.created_at),

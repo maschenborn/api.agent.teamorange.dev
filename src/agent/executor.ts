@@ -3,40 +3,35 @@ import type { AgentTask, AgentResult } from './types.js';
 import { config } from '../config/index.js';
 import { logger } from '../utils/logger.js';
 import { AgentExecutionError } from '../utils/errors.js';
+import { getAgentForEmail, type AgentConfig } from '../agents/registry.js';
 
 const docker = new Docker();
 
 export async function executeAgentTask(task: AgentTask): Promise<AgentResult> {
-  // Check required config for agent execution
-  if (!config.githubToken || !config.demoprojektRepoUrl) {
-    logger.warn({ taskId: task.id }, 'Agent execution skipped - GITHUB_TOKEN or DEMOPROJEKT_REPO_URL not configured');
-    return {
-      success: false,
-      summary: 'Agent-Ausführung nicht konfiguriert. GITHUB_TOKEN und DEMOPROJEKT_REPO_URL müssen gesetzt sein.',
-      filesModified: [],
-      error: 'Missing required configuration: GITHUB_TOKEN and/or DEMOPROJEKT_REPO_URL',
-    };
-  }
+  // Get agent configuration based on recipient email
+  const agentConfig = getAgentForEmail(task.recipient);
 
-  const containerName = `claude-agent-${task.id.substring(0, 8)}`;
+  logger.info(
+    { taskId: task.id, agentId: agentConfig.id, recipient: task.recipient },
+    `Using agent: ${agentConfig.name}`
+  );
 
-  logger.info({ taskId: task.id, containerName }, 'Starting agent container');
+  const containerName = `claude-agent-${agentConfig.id}-${task.id.substring(0, 8)}`;
 
-  const agentPrompt = buildAgentPrompt(task);
+  logger.info({ taskId: task.id, containerName, agentId: agentConfig.id }, 'Starting agent container');
+
+  // Build the prompt for this specific agent
+  const agentPrompt = buildAgentPrompt(task, agentConfig);
 
   try {
+    // Build environment variables
+    const envVars = buildEnvVars(task, agentConfig, agentPrompt);
+
     // Create container
     const container = await docker.createContainer({
       Image: config.agentDockerImage,
       name: containerName,
-      Env: [
-        `GITHUB_TOKEN=${config.githubToken}`,
-        `GIT_EMAIL=${config.gitEmail}`,
-        `GIT_NAME=${config.gitName}`,
-        `AGENT_PROMPT=${agentPrompt}`,
-        `MAX_TURNS=${config.maxAgentTurns}`,
-        `REPO_URL=${config.demoprojektRepoUrl}`,
-      ],
+      Env: envVars,
       HostConfig: {
         // Memory limit: 2GB
         Memory: 2 * 1024 * 1024 * 1024,
@@ -47,9 +42,7 @@ export async function executeAgentTask(task: AgentTask): Promise<AgentResult> {
         // Network for API access
         NetworkMode: 'bridge',
         // Mount Claude session credentials (read-only, will be copied by entrypoint)
-        Binds: [
-          `${config.claudeSessionPath}:/host-claude:ro`,
-        ],
+        Binds: [`${config.claudeSessionPath}:/host-claude:ro`],
       },
       WorkingDir: '/workspace',
     });
@@ -76,10 +69,7 @@ export async function executeAgentTask(task: AgentTask): Promise<AgentResult> {
 
     const output = logsBuffer.toString('utf8');
 
-    logger.info(
-      { containerName, exitCode: result.StatusCode },
-      'Agent container finished'
-    );
+    logger.info({ containerName, exitCode: result.StatusCode }, 'Agent container finished');
 
     // Clean up container after getting logs
     try {
@@ -98,7 +88,7 @@ export async function executeAgentTask(task: AgentTask): Promise<AgentResult> {
       };
     }
 
-    return parseAgentOutput(output);
+    return parseAgentOutput(output, agentConfig);
   } catch (error) {
     logger.error({ error, containerName, taskId: task.id }, 'Agent execution failed');
 
@@ -111,43 +101,83 @@ export async function executeAgentTask(task: AgentTask): Promise<AgentResult> {
       // Container might already be removed
     }
 
-    throw new AgentExecutionError(
-      error instanceof Error ? error.message : 'Unknown agent error',
-      task.id
-    );
+    throw new AgentExecutionError(error instanceof Error ? error.message : 'Unknown agent error', task.id);
   }
 }
 
-function buildAgentPrompt(task: AgentTask): string {
+function buildAgentPrompt(task: AgentTask, agentConfig: AgentConfig): string {
   return `
-Du bist ein autonomer Coding-Agent, der an dem Demoprojekt arbeitet.
+${agentConfig.systemPrompt}
 
-## Deine Aufgabe
+## Aktuelle Anfrage
+Von: ${task.sender}
+Betreff: ${task.subject}
+
 ${task.description}
 
-## Anweisungen
-1. Klone das Repository: git clone $REPO_URL .
-2. Führe die angeforderten Änderungen durch
-3. Teste deine Änderungen (bun run build)
-4. Committe die Änderungen mit einer aussagekräftigen Nachricht
-5. Pushe die Änderungen auf den main Branch
-
-## Wichtig
-- Arbeite nur im /workspace Verzeichnis
-- Keine externen Abhängigkeiten hinzufügen ohne explizite Anfrage
-- Verwende die Brand-Farbe #fa5f46 für Akzente
-- Alle Inhalte auf Deutsch
-- Am Ende: Gib eine kurze Zusammenfassung aus, was du getan hast
-
-## Los geht's
+## Ausgabe
+Gib deine Antwort als reinen Text aus. Diese wird per E-Mail an den Absender gesendet.
 `.trim();
 }
 
-function parseAgentOutput(output: string): AgentResult {
+function buildEnvVars(task: AgentTask, agentConfig: AgentConfig, prompt: string): string[] {
+  const envVars: string[] = [
+    `AGENT_PROMPT=${prompt}`,
+    `MAX_TURNS=${config.maxAgentTurns}`,
+    `AGENT_ID=${agentConfig.id}`,
+    `TASK_ID=${task.id}`,
+  ];
+
+  // Add Git credentials only if configured (for git-based agents)
+  if (config.githubToken) {
+    envVars.push(`GITHUB_TOKEN=${config.githubToken}`);
+  }
+
+  if (config.gitEmail) {
+    envVars.push(`GIT_EMAIL=${config.gitEmail}`);
+  }
+
+  if (config.gitName) {
+    envVars.push(`GIT_NAME=${config.gitName}`);
+  }
+
+  // Add repo URL if configured
+  if (config.demoprojektRepoUrl) {
+    envVars.push(`REPO_URL=${config.demoprojektRepoUrl}`);
+  }
+
+  // Add agent-specific environment variables
+  if (agentConfig.env) {
+    for (const [key, value] of Object.entries(agentConfig.env)) {
+      envVars.push(`${key}=${value}`);
+    }
+  }
+
+  return envVars;
+}
+
+function parseAgentOutput(output: string, agentConfig: AgentConfig): AgentResult {
   // Try to extract structured information from the output
   const lines = output.split('\n').filter((line) => line.trim());
 
-  // Look for commit hash in output
+  // For simple agents (like test), just return the output as summary
+  // Filter out system/debug lines
+  const responseLines = lines.filter((line) => {
+    // Skip git and system output
+    return (
+      !line.startsWith('[') &&
+      !line.includes('→') &&
+      !line.includes('Enumerating') &&
+      !line.includes('Compressing') &&
+      !line.includes('Writing objects') &&
+      !line.includes('remote:') &&
+      !line.includes('To https://') &&
+      !line.includes('branch') &&
+      !line.match(/^[a-f0-9]+\.\.[a-f0-9]+/)
+    );
+  });
+
+  // Look for commit hash in output (for git-based agents)
   const commitMatch = output.match(/\[main ([a-f0-9]{7,40})\]/);
   const commitHash = commitMatch?.[1];
 
@@ -158,19 +188,8 @@ function parseAgentOutput(output: string): AgentResult {
     filesModified.push(match[1]);
   }
 
-  // Extract last meaningful output as summary
-  const summaryLines = lines.slice(-10).filter((line) => {
-    // Skip git and system output
-    return (
-      !line.startsWith('[') &&
-      !line.includes('→') &&
-      !line.includes('Enumerating') &&
-      !line.includes('Compressing') &&
-      !line.includes('Writing objects')
-    );
-  });
-
-  const summary = summaryLines.join('\n').slice(0, 1000) || 'Aufgabe abgeschlossen';
+  // Use the filtered response as summary
+  const summary = responseLines.join('\n').slice(-3000) || 'Aufgabe abgeschlossen';
 
   return {
     success: true,
