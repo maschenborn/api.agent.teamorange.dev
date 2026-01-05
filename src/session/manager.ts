@@ -61,7 +61,6 @@ export function getSessionPaths(agentId: string, sessionId: string): SessionPath
     root,
     workspace: path.join(root, 'workspace'),
     claudeHome: path.join(root, 'claude-home'),
-    claudeConfig: path.join(root, 'claude-home', '.claude'),
   };
 }
 
@@ -148,17 +147,18 @@ export async function createSession(params: {
 
   // Create session directories with open permissions
   // (Sandbox container runs as non-root user 'agent')
+  // Note: claudeHome is mounted as ~/.claude in container, so NO nested .claude needed!
   const paths = getSessionPaths(agentId, sessionId);
   await fs.mkdir(paths.workspace, { recursive: true, mode: 0o777 });
-  await fs.mkdir(paths.claudeConfig, { recursive: true, mode: 0o777 });
+  await fs.mkdir(paths.claudeHome, { recursive: true, mode: 0o777 });
 
   // Ensure parent directories are also accessible
   await fs.chmod(paths.root, 0o777);
   await fs.chmod(paths.claudeHome, 0o777);
 
-  // Create symlink to shared credentials
+  // Copy credentials directly to claudeHome (becomes ~/.claude/.credentials.json in container)
   const credentialsSource = path.join(config.claudeSessionPath, '.credentials.json');
-  const credentialsTarget = path.join(paths.claudeConfig, '.credentials.json');
+  const credentialsTarget = path.join(paths.claudeHome, '.credentials.json');
 
   try {
     // Check if credentials exist
@@ -233,7 +233,8 @@ export async function hasClaudeSession(agentId: string, sessionId: string): Prom
   const paths = getSessionPaths(agentId, sessionId);
 
   // Check if Claude projects directory has content
-  const projectsDir = path.join(paths.claudeConfig, 'projects');
+  // claudeHome is mounted as ~/.claude, so projects are at claudeHome/projects
+  const projectsDir = path.join(paths.claudeHome, 'projects');
 
   try {
     const entries = await fs.readdir(projectsDir);

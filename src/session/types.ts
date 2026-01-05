@@ -37,10 +37,8 @@ export interface SessionPaths {
   root: string;
   /** Workspace directory (for git repos, etc.) */
   workspace: string;
-  /** Claude home directory (~/.claude equivalent) */
+  /** Claude home directory - mounted as ~/.claude in container */
   claudeHome: string;
-  /** Claude config directory */
-  claudeConfig: string;
 }
 
 export interface SessionIndex {
