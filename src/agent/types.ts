@@ -17,6 +17,7 @@ export interface AgentResult {
   commitHash?: string;
   output?: string;
   error?: string;
+  modelsUsed?: string[]; // e.g. ['claude-haiku-4-5', 'claude-opus-4-5']
 }
 
 export interface AgentContainerConfig {

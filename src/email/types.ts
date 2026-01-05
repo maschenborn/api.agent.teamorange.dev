@@ -87,4 +87,5 @@ export interface AgentResult {
   filesModified: string[];
   commitHash?: string;
   deployUrl?: string;
+  modelsUsed?: string[]; // e.g. ['Haiku 4.5', 'Opus 4.5']
 }

@@ -174,12 +174,17 @@ function stripDockerStreamHeaders(output: string): string {
     .join('\n');
 }
 
+interface ClaudeResponseData {
+  text: string;
+  modelsUsed: string[];
+}
+
 /**
- * Extract Claude's response text from JSON output.
+ * Extract Claude's response text and model usage from JSON output.
  * Claude Code with --output-format json returns:
- * { "type": "result", "subtype": "success", "result": "response text..." }
+ * { "type": "result", "subtype": "success", "result": "response text...", "modelUsage": {...} }
  */
-function extractClaudeResponse(output: string): string | null {
+function extractClaudeResponse(output: string): ClaudeResponseData | null {
   // Clean Docker headers first
   const cleanOutput = stripDockerStreamHeaders(output);
 
@@ -193,9 +198,20 @@ function extractClaudeResponse(output: string): string | null {
   try {
     const parsed = JSON.parse(jsonMatch[0]);
 
+    // Extract model names from modelUsage (e.g. "claude-haiku-4-5-20251001" -> "Haiku 4.5")
+    const modelsUsed: string[] = [];
+    if (parsed.modelUsage && typeof parsed.modelUsage === 'object') {
+      for (const modelId of Object.keys(parsed.modelUsage)) {
+        const friendlyName = formatModelName(modelId);
+        if (friendlyName && !modelsUsed.includes(friendlyName)) {
+          modelsUsed.push(friendlyName);
+        }
+      }
+    }
+
     // The actual format: { "type": "result", "result": "text..." }
     if (parsed.type === 'result' && typeof parsed.result === 'string') {
-      return parsed.result;
+      return { text: parsed.result, modelsUsed };
     }
 
     // Fallback: check for content array format (older versions)
@@ -203,7 +219,7 @@ function extractClaudeResponse(output: string): string | null {
       const textParts = parsed.result.content
         .filter((item: { type: string; text?: string }) => item.type === 'text' && item.text)
         .map((item: { text: string }) => item.text);
-      return textParts.join('\n');
+      return { text: textParts.join('\n'), modelsUsed };
     }
 
     return null;
@@ -213,19 +229,34 @@ function extractClaudeResponse(output: string): string | null {
   }
 }
 
+/**
+ * Convert model ID to friendly name.
+ * e.g. "claude-haiku-4-5-20251001" -> "Haiku 4.5"
+ */
+function formatModelName(modelId: string): string {
+  if (modelId.includes('opus')) return 'Opus 4.5';
+  if (modelId.includes('sonnet')) return 'Sonnet 4';
+  if (modelId.includes('haiku')) return 'Haiku 4.5';
+  return modelId;
+}
+
 function parseAgentOutput(output: string, agentConfig: AgentConfig): AgentResult {
   // Try to extract Claude's response from JSON output
   const claudeResponse = extractClaudeResponse(output);
 
   if (claudeResponse) {
     // Successfully parsed JSON output - use Claude's response directly
-    logger.info({ responseLength: claudeResponse.length }, 'Extracted Claude response from JSON');
+    logger.info(
+      { responseLength: claudeResponse.text.length, modelsUsed: claudeResponse.modelsUsed },
+      'Extracted Claude response from JSON'
+    );
 
     return {
       success: true,
-      summary: claudeResponse.slice(0, 3000),
+      summary: claudeResponse.text.slice(0, 3000),
       filesModified: [],
       output: output.slice(-5000),
+      modelsUsed: claudeResponse.modelsUsed.length > 0 ? claudeResponse.modelsUsed : undefined,
     };
   }
 

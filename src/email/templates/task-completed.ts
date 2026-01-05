@@ -5,7 +5,7 @@ export function taskCompletedTemplate(params: TaskCompletedParams): string {
 
   const filesSection = result.filesModified.length > 0
     ? `
-      <h3>Geänderte Dateien:</h3>
+      <h3>Geaenderte Dateien:</h3>
       <ul>
         ${result.filesModified.map(f => `<li><code>${escapeHtml(f)}</code></li>`).join('\n')}
       </ul>
@@ -14,6 +14,10 @@ export function taskCompletedTemplate(params: TaskCompletedParams): string {
 
   const commitSection = result.commitHash
     ? `<p><strong>Commit:</strong> <code>${escapeHtml(result.commitHash)}</code></p>`
+    : '';
+
+  const modelsSection = result.modelsUsed && result.modelsUsed.length > 0
+    ? `<p><strong>Modelle:</strong> ${result.modelsUsed.join(', ')}</p>`
     : '';
 
   return `
@@ -47,6 +51,7 @@ export function taskCompletedTemplate(params: TaskCompletedParams): string {
 
       ${filesSection}
       ${commitSection}
+      ${modelsSection}
 
       <p>Die Änderungen wurden committed und gepusht. Du kannst sie jetzt im Repository einsehen.</p>
 
