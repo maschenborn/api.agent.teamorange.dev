@@ -26,9 +26,12 @@ WORKDIR /app
 # Install Docker CLI (needed to spawn agent containers)
 RUN apk add --no-cache docker-cli
 
-# Create non-root user
-RUN addgroup -g 1001 -S agent && \
-    adduser -S agent -u 1001 -G agent
+# Create non-root user with docker group access
+# GID 988 matches the host's docker group for socket access
+RUN addgroup -g 988 -S docker && \
+    addgroup -g 1001 -S agent && \
+    adduser -S agent -u 1001 -G agent && \
+    adduser agent docker
 
 # Copy built files
 COPY --from=builder /app/dist ./dist
