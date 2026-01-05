@@ -41,6 +41,13 @@ emailWebhookRouter.post('/', async (req: Request, res: Response) => {
     return;
   }
 
+  // SENDER WHITELIST: Only process emails from @teamorange.de
+  if (!fromAddress.endsWith('@teamorange.de')) {
+    logger.warn({ emailId, from: fromAddress }, 'Ignoring email from non-whitelisted domain');
+    res.status(200).json({ status: 'ignored', reason: 'sender not whitelisted - only @teamorange.de allowed' });
+    return;
+  }
+
   // Acknowledge webhook immediately
   res.status(200).json({ status: 'processing', emailId });
 
