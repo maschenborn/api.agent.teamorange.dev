@@ -13,9 +13,9 @@ export const configSchema = z.object({
   // Claude Code Session (mounted from host ~/.claude/)
   claudeSessionPath: z.string().min(1),
 
-  // GitHub
-  githubToken: z.string().min(1),
-  demoprojektRepoUrl: z.string().min(1),
+  // GitHub (optional - only needed for git operations)
+  githubToken: z.string().optional(),
+  demoprojektRepoUrl: z.string().optional(),
 
   // Agent
   agentDockerImage: z.string().default('claude-remote-agent-sandbox:latest'),

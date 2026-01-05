@@ -7,6 +7,17 @@ import { AgentExecutionError } from '../utils/errors.js';
 const docker = new Docker();
 
 export async function executeAgentTask(task: AgentTask): Promise<AgentResult> {
+  // Check required config for agent execution
+  if (!config.githubToken || !config.demoprojektRepoUrl) {
+    logger.warn({ taskId: task.id }, 'Agent execution skipped - GITHUB_TOKEN or DEMOPROJEKT_REPO_URL not configured');
+    return {
+      success: false,
+      summary: 'Agent-Ausführung nicht konfiguriert. GITHUB_TOKEN und DEMOPROJEKT_REPO_URL müssen gesetzt sein.',
+      filesModified: [],
+      error: 'Missing required configuration: GITHUB_TOKEN and/or DEMOPROJEKT_REPO_URL',
+    };
+  }
+
   const containerName = `claude-agent-${task.id.substring(0, 8)}`;
 
   logger.info({ taskId: task.id, containerName }, 'Starting agent container');
