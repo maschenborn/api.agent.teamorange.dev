@@ -146,10 +146,15 @@ export async function createSession(params: {
     lastActivityAt: now,
   };
 
-  // Create session directories
+  // Create session directories with open permissions
+  // (Sandbox container runs as non-root user 'agent')
   const paths = getSessionPaths(agentId, sessionId);
-  await fs.mkdir(paths.workspace, { recursive: true });
-  await fs.mkdir(paths.claudeConfig, { recursive: true });
+  await fs.mkdir(paths.workspace, { recursive: true, mode: 0o777 });
+  await fs.mkdir(paths.claudeConfig, { recursive: true, mode: 0o777 });
+
+  // Ensure parent directories are also accessible
+  await fs.chmod(paths.root, 0o777);
+  await fs.chmod(paths.claudeHome, 0o777);
 
   // Create symlink to shared credentials
   const credentialsSource = path.join(config.claudeSessionPath, '.credentials.json');
@@ -158,15 +163,13 @@ export async function createSession(params: {
   try {
     // Check if credentials exist
     await fs.access(credentialsSource);
-    // Create symlink (or copy if symlink fails)
-    try {
-      await fs.symlink(credentialsSource, credentialsTarget);
-    } catch {
-      // Fallback to copy if symlink fails (e.g., on some filesystems)
-      await fs.copyFile(credentialsSource, credentialsTarget);
-    }
-  } catch {
-    logger.warn({ credentialsSource }, 'Credentials file not found, session may not authenticate');
+    // Copy credentials (symlinks don't work across Docker bind mounts reliably)
+    await fs.copyFile(credentialsSource, credentialsTarget);
+    // Make readable by sandbox user
+    await fs.chmod(credentialsTarget, 0o644);
+    logger.debug({ credentialsTarget }, 'Credentials copied to session');
+  } catch (err) {
+    logger.warn({ credentialsSource, error: err }, 'Credentials file not found, session may not authenticate');
   }
 
   // Update index
