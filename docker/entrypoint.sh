@@ -63,17 +63,19 @@ elif [ "$USE_RESUME" = "true" ]; then
     echo "Resuming previous session..."
 
     # Find Claude session ID from projects directory
-    # Sessions are stored in ~/.claude/projects/<project-hash>/sessions/<session-id>
+    # Sessions are stored as ~/.claude/projects/<project-hash>/<session-id>.jsonl
     CLAUDE_SESSION_ID=""
 
     if [ -d "/home/agent/.claude/projects" ]; then
-        # Get the most recent session ID
-        CLAUDE_SESSION_ID=$(find /home/agent/.claude/projects -type d -name "sessions" -exec sh -c 'ls -t "$1" 2>/dev/null | head -1' _ {} \; 2>/dev/null | head -1)
+        # Find the most recent .jsonl file and extract session ID (filename without extension)
+        LATEST_SESSION=$(find /home/agent/.claude/projects -name "*.jsonl" -type f -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)
 
-        if [ -n "$CLAUDE_SESSION_ID" ]; then
+        if [ -n "$LATEST_SESSION" ]; then
+            # Extract session ID from filename (remove path and .jsonl extension)
+            CLAUDE_SESSION_ID=$(basename "$LATEST_SESSION" .jsonl)
             echo "Found Claude session: $CLAUDE_SESSION_ID"
         else
-            echo "Warning: No Claude session found in projects directory"
+            echo "Warning: No Claude session files found in projects directory"
         fi
     fi
 
