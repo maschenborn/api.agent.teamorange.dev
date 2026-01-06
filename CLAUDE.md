@@ -98,23 +98,55 @@ npm start
 npm run typecheck
 ```
 
-## Deployment (Coolify)
+## Deployment
+
+### Coolify-Referenzen
+
+| Resource | Identifier |
+|----------|------------|
+| **Application UUID** | `rocg4g48sgog0o8kgc8gsk80` |
+| **Coolify Dashboard** | https://coolify.teamorange.dev |
+| **Container Name** | `webhook-server-rocg4g48sgog0o8kgc8gsk80-*` |
+
+### Standard-Deployment (Code-Aenderungen)
 
 ```bash
-# Docker Image bauen
-docker build -t claude-remote-agent:latest .
+# 1. Commits pushen
+git push
 
-# Agent Sandbox bauen
-docker build -t claude-agent-sandbox:latest -f docker/Dockerfile docker/
+# 2. Coolify Redeploy triggern (MCP-Tool oder Dashboard)
+# Via MCP:
+mcp__coolify__restart_application uuid=rocg4g48sgog0o8kgc8gsk80
+
+# Via CLI (Alternative):
+curl -X POST "https://coolify.teamorange.dev/api/v1/applications/rocg4g48sgog0o8kgc8gsk80/restart" \
+  -H "Authorization: Bearer $COOLIFY_TOKEN"
 ```
 
-## Environment Variables
+### Agent Sandbox Rebuild (bei entrypoint.sh Aenderungen)
 
-Siehe `.env.local` - alle mit `XXXXXX` markierten Werte müssen ersetzt werden.
+Wenn `docker/entrypoint.sh` oder `docker/Dockerfile` geaendert wird:
 
-**Wichtig für Coolify:**
-- Alle Env-Vars in Coolify unter "Environment Variables" eintragen
-- `CLAUDE_SESSION_PATH` muss auf gemountete Credentials zeigen
+```bash
+# 1. Repo auf Server clonen/updaten
+ssh root@157.90.19.138 "cd /tmp && rm -rf api.agent.teamorange.dev && \
+  git clone https://github.com/maschenborn/api.agent.teamorange.dev.git"
+
+# 2. Sandbox-Image neu bauen
+ssh root@157.90.19.138 "cd /tmp/api.agent.teamorange.dev && \
+  docker build -t claude-agent-sandbox:latest -f docker/Dockerfile docker/"
+
+# 3. Aufraumen
+ssh root@157.90.19.138 "rm -rf /tmp/api.agent.teamorange.dev"
+```
+
+### Environment Variables
+
+Siehe `.env.local` - alle mit `XXXXXX` markierten Werte muessen ersetzt werden.
+
+**In Coolify setzen:**
+- Coolify Dashboard > api-agent-teamorange > Environment Variables
+- Wichtig: `ANTHROPIC_API_KEY` fuer Hybrid-Auth Fallback
 
 ## Konventionen
 
@@ -128,14 +160,25 @@ Siehe `.env.local` - alle mit `XXXXXX` markierten Werte müssen ersetzt werden.
 
 | Komponente | Status |
 |------------|--------|
-| Coolify Docker Compose | ✅ Läuft |
-| Domain + SSL | ✅ Konfiguriert |
-| Resend Webhook | ✅ Aktiv |
-| Agent Sandbox Image | ✅ Gebaut |
-| Guardrail (Pattern + AI) | ✅ Aktiv |
+| Coolify Docker Compose | Laeuft |
+| Domain + SSL | Konfiguriert |
+| Resend Webhook | Aktiv |
+| Agent Sandbox Image | Gebaut |
+| Guardrail (Pattern + AI) | Aktiv |
+| Hybrid-Auth | Aktiv |
 
 ### Bei Problemen
 
-1. **Token abgelaufen:** Siehe "Claude Credentials aktualisieren" oben
-2. **Container-Logs:** `ssh root@157.90.19.138 "docker logs claude-agent-api-1"`
-3. **Coolify Dashboard:** https://coolify.teamorange.dev
+```bash
+# Container-Status
+ssh root@157.90.19.138 "docker ps | grep webhook"
+
+# Container-Logs
+ssh root@157.90.19.138 "docker logs webhook-server-rocg4g48sgog0o8kgc8gsk80-* --tail 100"
+
+# Health-Check
+curl https://api.agent.teamorange.dev/health
+```
+
+1. **Token abgelaufen:** Siehe "OAuth-Credentials manuell aktualisieren" oben
+2. **API-Key Fallback testen:** Email senden, Auth-Methode in Antwort pruefen
