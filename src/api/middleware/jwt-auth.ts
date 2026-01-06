@@ -62,26 +62,26 @@ export function jwtAuth(
 
     logger.debug({ sub: decoded.sub }, 'JWT authentication successful');
     next();
-  } catch (error) {
-    if (error instanceof jwt.TokenExpiredError) {
+  } catch (err: unknown) {
+    if (err instanceof jwt.TokenExpiredError) {
       res.status(401).json({
         error: 'Token expired',
         code: 'AUTH_EXPIRED',
-        expiredAt: error.expiredAt,
+        expiredAt: err.expiredAt,
       });
       return;
     }
 
-    if (error instanceof jwt.JsonWebTokenError) {
+    if (err instanceof jwt.JsonWebTokenError) {
       res.status(401).json({
         error: 'Invalid token',
         code: 'AUTH_INVALID',
-        message: error.message,
+        message: err.message,
       });
       return;
     }
 
-    logger.error({ error }, 'JWT verification failed');
+    logger.error({ error: err }, 'JWT verification failed');
     res.status(500).json({
       error: 'Authentication failed',
       code: 'AUTH_ERROR',
