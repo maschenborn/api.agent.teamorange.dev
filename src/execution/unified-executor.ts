@@ -1,0 +1,371 @@
+/**
+ * Unified Executor
+ *
+ * Central execution logic for all channels (API, Email, Teams).
+ * Handles Docker container spawning, MCP injection, and result parsing.
+ */
+
+import Docker from 'dockerode';
+import { config } from '../config/index.js';
+import { logger } from '../utils/logger.js';
+import { AgentExecutionError } from '../utils/errors.js';
+import { getSessionPaths, type SessionPaths } from '../session/index.js';
+import { injectMcpConfig } from './mcp-injector.js';
+import type { ExecutionRequest, ExecutionResult, ExecutionStatus } from './types.js';
+
+const docker = new Docker();
+
+// In-memory execution tracking
+const runningExecutions = new Map<string, ExecutionStatus>();
+
+/**
+ * Execute a task in a Docker container
+ */
+export async function executeTask(request: ExecutionRequest): Promise<ExecutionResult> {
+  const { executionId, agentConfig, sessionId } = request;
+  const containerName = `claude-agent-${agentConfig.id}-${executionId.substring(0, 8)}`;
+
+  // Track execution
+  const status: ExecutionStatus = {
+    executionId,
+    status: 'running',
+    agentId: agentConfig.id,
+    sessionId,
+    prompt: request.prompt.slice(0, 200),
+    source: request.source,
+    sender: request.sender,
+    startedAt: new Date(),
+  };
+  runningExecutions.set(executionId, status);
+
+  logger.info(
+    {
+      executionId,
+      agentId: agentConfig.id,
+      sessionId,
+      useResume: request.useResume,
+      source: request.source,
+    },
+    'Starting execution'
+  );
+
+  // Get session paths if session mode
+  let sessionPaths: SessionPaths | null = null;
+  if (sessionId) {
+    sessionPaths = getSessionPaths(agentConfig.id, sessionId);
+    logger.debug({ sessionPaths: sessionPaths.root }, 'Using session paths');
+  }
+
+  // Inject MCP config if provided
+  if (request.mcpConfig && sessionPaths) {
+    await injectMcpConfig(sessionPaths, request.mcpConfig);
+    logger.info({ preset: request.mcpConfig.preset }, 'MCP config injected');
+  }
+
+  // Build the prompt
+  const agentPrompt = buildAgentPrompt(request);
+
+  try {
+    // Build environment variables
+    const envVars = buildEnvVars(request, agentPrompt);
+
+    // Build bind mounts
+    const binds = buildBindMounts(sessionPaths);
+
+    // Create container with configurable resources
+    const container = await docker.createContainer({
+      Image: config.agentDockerImage,
+      name: containerName,
+      Env: envVars,
+      HostConfig: {
+        Memory: request.resources.memoryMb * 1024 * 1024,
+        NanoCpus: request.resources.cpuCores * 1_000_000_000,
+        AutoRemove: false,
+        NetworkMode: 'bridge',
+        Binds: binds,
+      },
+      WorkingDir: '/workspace',
+    });
+
+    logger.info({ containerName }, 'Container created, starting...');
+
+    // Start container
+    await container.start();
+
+    // Wait for container with timeout
+    const waitPromise = container.wait();
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(
+        () => reject(new Error('Agent timeout exceeded')),
+        request.resources.timeoutMs
+      );
+    });
+
+    const waitResult = await Promise.race([waitPromise, timeoutPromise]);
+
+    // Get logs
+    const logsBuffer = await container.logs({
+      stdout: true,
+      stderr: true,
+      follow: false,
+    });
+
+    const output = logsBuffer.toString('utf8');
+
+    logger.info({ containerName, exitCode: waitResult.StatusCode }, 'Container finished');
+
+    // Clean up container
+    try {
+      await container.remove({ force: true });
+      logger.debug({ containerName }, 'Container removed');
+    } catch (removeError) {
+      logger.warn({ removeError, containerName }, 'Failed to remove container');
+    }
+
+    // Parse result
+    let result: ExecutionResult;
+    if (waitResult.StatusCode !== 0) {
+      result = {
+        success: false,
+        summary: 'Agent exited with error',
+        filesModified: [],
+        error: output.slice(-2000),
+        rawOutput: output.slice(-5000),
+      };
+    } else {
+      result = parseAgentOutput(output);
+    }
+
+    // Update status
+    status.status = result.success ? 'completed' : 'failed';
+    status.completedAt = new Date();
+    status.result = result;
+
+    return result;
+  } catch (error) {
+    logger.error({ error, containerName, executionId }, 'Execution failed');
+
+    // Try to clean up container
+    try {
+      const container = docker.getContainer(containerName);
+      await container.stop({ t: 5 }).catch(() => {});
+      await container.remove({ force: true }).catch(() => {});
+    } catch {
+      // Container might already be removed
+    }
+
+    // Update status
+    status.status = 'failed';
+    status.completedAt = new Date();
+    status.result = {
+      success: false,
+      summary: 'Execution failed',
+      filesModified: [],
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+
+    throw new AgentExecutionError(
+      error instanceof Error ? error.message : 'Unknown agent error',
+      executionId
+    );
+  } finally {
+    // Keep in running map for a while for status queries, then remove
+    setTimeout(() => {
+      runningExecutions.delete(executionId);
+    }, 5 * 60 * 1000); // 5 minutes
+  }
+}
+
+/**
+ * Get execution status by ID
+ */
+export function getExecutionStatus(executionId: string): ExecutionStatus | undefined {
+  return runningExecutions.get(executionId);
+}
+
+/**
+ * List all executions (running and recently completed)
+ */
+export function listExecutions(): ExecutionStatus[] {
+  return Array.from(runningExecutions.values());
+}
+
+/**
+ * Build the prompt for the agent
+ */
+function buildAgentPrompt(request: ExecutionRequest): string {
+  const systemPrompt = request.systemPrompt || request.agentConfig.systemPrompt;
+
+  return `
+${systemPrompt}
+
+## Aktuelle Anfrage
+${request.sender ? `Von: ${request.sender}` : ''}
+${request.subject ? `Betreff: ${request.subject}` : ''}
+
+${request.prompt}
+
+## Ausgabe
+Gib deine Antwort als reinen Text aus.
+`.trim();
+}
+
+/**
+ * Build bind mounts for the container
+ */
+function buildBindMounts(sessionPaths: SessionPaths | null): string[] {
+  if (sessionPaths) {
+    // Session mode: mount persistent directories
+    const hostRoot = sessionPaths.root.replace(config.sessionsPath, config.sessionsHostPath);
+
+    return [
+      `${hostRoot}/workspace:/workspace`,
+      `${hostRoot}/claude-home:/home/agent/.claude`,
+      `${config.claudeHostPath}:/host-claude:ro`,
+    ];
+  }
+
+  // Legacy mode: just mount credentials
+  return [`${config.claudeHostPath}:/host-claude:ro`];
+}
+
+/**
+ * Build environment variables for the container
+ */
+function buildEnvVars(request: ExecutionRequest, prompt: string): string[] {
+  const envVars: string[] = [
+    `AGENT_PROMPT=${prompt}`,
+    `MAX_TURNS=${request.resources.maxTurns}`,
+    `AGENT_ID=${request.agentConfig.id}`,
+    `EXECUTION_ID=${request.executionId}`,
+  ];
+
+  // Session management
+  if (request.sessionId) {
+    envVars.push(`SESSION_ID=${request.sessionId}`);
+    envVars.push(`SKIP_CREDENTIAL_SETUP=true`);
+  }
+
+  if (request.useResume) {
+    envVars.push(`USE_RESUME=true`);
+  }
+
+  // Git credentials
+  if (config.githubToken) {
+    envVars.push(`GITHUB_TOKEN=${config.githubToken}`);
+  }
+  if (config.gitEmail) {
+    envVars.push(`GIT_EMAIL=${config.gitEmail}`);
+  }
+  if (config.gitName) {
+    envVars.push(`GIT_NAME=${config.gitName}`);
+  }
+
+  // Git repo from request or config
+  const repoUrl = request.git?.repoUrl || config.demoprojektRepoUrl;
+  if (repoUrl) {
+    envVars.push(`REPO_URL=${repoUrl}`);
+  }
+
+  // Agent-specific env vars
+  if (request.agentConfig.env) {
+    for (const [key, value] of Object.entries(request.agentConfig.env)) {
+      envVars.push(`${key}=${value}`);
+    }
+  }
+
+  // MCP API keys (if using presets)
+  if (request.mcpConfig?.preset?.includes('moco') && config.mocoApiKey) {
+    envVars.push(`MOCO_API_KEY=${config.mocoApiKey}`);
+  }
+  if (request.mcpConfig?.preset?.includes('firecrawl') && config.firecrawlApiKey) {
+    envVars.push(`FIRECRAWL_API_KEY=${config.firecrawlApiKey}`);
+  }
+
+  return envVars;
+}
+
+/**
+ * Strip Docker multiplexed stream headers from output
+ */
+function stripDockerStreamHeaders(output: string): string {
+  return output
+    .split('\n')
+    .map((line) => line.replace(/^[\x00-\x08\x0B\x0C\x0E-\x1F]+/g, ''))
+    .join('\n');
+}
+
+/**
+ * Parse Claude's JSON output
+ */
+function parseAgentOutput(output: string): ExecutionResult {
+  const cleanOutput = stripDockerStreamHeaders(output);
+
+  // Try to find JSON result
+  const jsonMatch = cleanOutput.match(/\{"type":"result"[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]);
+
+      // Extract model names
+      const modelsUsed: string[] = [];
+      if (parsed.modelUsage && typeof parsed.modelUsage === 'object') {
+        for (const modelId of Object.keys(parsed.modelUsage)) {
+          const friendlyName = formatModelName(modelId);
+          if (friendlyName && !modelsUsed.includes(friendlyName)) {
+            modelsUsed.push(friendlyName);
+          }
+        }
+      }
+
+      if (parsed.type === 'result' && typeof parsed.result === 'string') {
+        // Look for commit hash and files
+        const commitMatch = output.match(/\[main ([a-f0-9]{7,40})\]/);
+        const filesModified: string[] = [];
+        const fileMatches = output.matchAll(/(?:create|modify|delete) mode \d+ (.+)/g);
+        for (const match of fileMatches) {
+          filesModified.push(match[1]);
+        }
+
+        return {
+          success: true,
+          summary: parsed.result.slice(0, 3000),
+          filesModified,
+          commitHash: commitMatch?.[1],
+          modelsUsed: modelsUsed.length > 0 ? modelsUsed : undefined,
+          rawOutput: output.slice(-5000),
+        };
+      }
+    } catch {
+      logger.warn('Failed to parse Claude JSON output');
+    }
+  }
+
+  // Fallback: raw output parsing
+  const lines = cleanOutput.split('\n').filter((line) => line.trim());
+  const responseLines = lines.filter((line) => {
+    return (
+      !line.startsWith('[') &&
+      !line.includes('→') &&
+      !line.includes('Setting up Claude') &&
+      !line.includes('Credentials copied')
+    );
+  });
+
+  return {
+    success: true,
+    summary: responseLines.join('\n').slice(-3000) || 'Aufgabe abgeschlossen',
+    filesModified: [],
+    rawOutput: output.slice(-5000),
+  };
+}
+
+/**
+ * Convert model ID to friendly name
+ */
+function formatModelName(modelId: string): string {
+  if (modelId.includes('opus')) return 'Opus 4.5';
+  if (modelId.includes('sonnet')) return 'Sonnet 4';
+  if (modelId.includes('haiku')) return 'Haiku 4.5';
+  return modelId;
+}

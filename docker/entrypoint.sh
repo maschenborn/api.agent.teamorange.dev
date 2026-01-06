@@ -17,12 +17,9 @@ if [ "$SKIP_CREDENTIAL_SETUP" != "true" ]; then
     fi
 else
     echo "Session mode: using pre-configured credentials"
-    # Ensure credentials symlink exists (created by session manager)
+    # Credentials are managed by session manager (copied with correct UID 1001)
     if [ ! -f "/home/agent/.claude/.credentials.json" ]; then
-        echo "Warning: No credentials in session, copying from host..."
-        if [ -f "/host-claude/.credentials.json" ]; then
-            cp /host-claude/.credentials.json /home/agent/.claude/
-        fi
+        echo "Warning: No credentials found in session directory"
     fi
 fi
 

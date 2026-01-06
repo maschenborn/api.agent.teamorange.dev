@@ -1,12 +1,15 @@
 import { Router, type Request, type Response } from 'express';
+import { randomBytes } from 'crypto';
 import type { ResendEmailReceivedEvent, RejectionReason } from '../../email/types.js';
 import { emailClient } from '../../email/client.js';
 import { parseTaskFromEmail } from '../../agent/task-parser.js';
-import { executeAgentTask } from '../../agent/executor.js';
+import { executeTask } from '../../execution/unified-executor.js';
 import { analyzeTaskSafety } from '../../agent/safety-analyzer.js';
 import { logger } from '../../utils/logger.js';
-import { getOrCreateSession } from '../../session/index.js';
+import { getOrCreateSession, hasClaudeSession } from '../../session/index.js';
 import { getAgentForEmail } from '../../agents/registry.js';
+import { config } from '../../config/index.js';
+import type { ExecutionRequest } from '../../execution/types.js';
 
 export const emailWebhookRouter = Router();
 
@@ -133,7 +136,30 @@ async function processEmailTask(event: ResendEmailReceivedEvent): Promise<void> 
 
     // 6. Execute agent in Docker container
     logger.info({ emailId, taskId: task.id, sessionId: session.id }, 'Executing agent task');
-    const result = await executeAgentTask(task);
+
+    // Check if we should resume an existing Claude session
+    const useResume = await hasClaudeSession(agentConfig.id, session.id);
+
+    // Build execution request
+    const executionRequest: ExecutionRequest = {
+      executionId: randomBytes(8).toString('hex'),
+      prompt: task.description,
+      agentConfig,
+      sessionId: session.id,
+      useResume,
+      isNewSession: isNew,
+      resources: {
+        memoryMb: config.agentMemoryMb,
+        cpuCores: config.agentCpuCores,
+        timeoutMs: config.agentTimeoutMs,
+        maxTurns: config.maxAgentTurns,
+      },
+      skipSafetyCheck: true, // Already checked above
+      source: 'email',
+      sender: fullEmail.from,
+    };
+
+    const result = await executeTask(executionRequest);
 
     // 7. Send results
     if (result.success) {

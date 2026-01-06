@@ -126,3 +126,15 @@ export function getAllAgents(): AgentConfig[] {
 export function hasAgent(id: string): boolean {
   return id in agents;
 }
+
+/**
+ * Get agent by ID
+ * @param id - Agent ID (e.g. "test", "moco", "default")
+ * @returns Agent configuration or undefined
+ */
+export function getAgentById(id: string): AgentConfig | undefined {
+  if (id === 'default') {
+    return defaultAgent;
+  }
+  return agents[id];
+}

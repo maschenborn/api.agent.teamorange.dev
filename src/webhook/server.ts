@@ -2,6 +2,9 @@ import express, { type Express } from 'express';
 import { healthRouter } from './routes/health.js';
 import { emailWebhookRouter } from './routes/email.js';
 import { verifyResendSignature } from './middleware/verify-signature.js';
+import { executeRouter } from '../api/routes/execute.js';
+import { statusRouter } from '../api/routes/status.js';
+import { sessionsRouter } from '../api/routes/sessions.js';
 import { logger } from '../utils/logger.js';
 import { config } from '../config/index.js';
 
@@ -19,6 +22,13 @@ export function createServer(): Express {
 
   // Routes
   app.use('/health', healthRouter);
+
+  // API Routes (JWT protected)
+  app.use('/api/execute', executeRouter);
+  app.use('/api/status', statusRouter);
+  app.use('/api/sessions', sessionsRouter);
+
+  // Webhook Routes
   app.use('/webhook/email', verifyResendSignature, emailWebhookRouter);
 
   // Error handler

@@ -5,6 +5,11 @@ export const configSchema = z.object({
   port: z.number().min(1).max(65535).default(3000),
   nodeEnv: z.enum(['development', 'production', 'test']).default('development'),
 
+  // API Authentication
+  jwtSecret: z.string().min(32).optional(), // Required for API, optional for email-only mode
+  jwtIssuer: z.string().default('agent.teamorange.dev'),
+  jwtExpiresIn: z.string().default('30d'), // Default token validity
+
   // Resend
   resendApiKey: z.string().startsWith('re_'),
   resendWebhookSecret: z.string().min(1),
@@ -23,10 +28,18 @@ export const configSchema = z.object({
   githubToken: z.string().optional(),
   demoprojektRepoUrl: z.string().optional(),
 
-  // Agent
-  agentDockerImage: z.string().default('claude-remote-agent-sandbox:latest'),
+  // Agent Container
+  agentDockerImage: z.string().default('claude-agent-sandbox:latest'),
   maxAgentTurns: z.number().min(1).max(200).default(50),
   agentTimeoutMs: z.number().min(30000).max(600000).default(300000), // 5 min default
+
+  // Agent Resource Limits (configurable via API, these are defaults)
+  agentMemoryMb: z.number().min(512).max(8192).default(2048),
+  agentCpuCores: z.number().min(1).max(4).default(2),
+
+  // MCP (optional API keys for preset MCP servers)
+  mocoApiKey: z.string().optional(),
+  firecrawlApiKey: z.string().optional(),
 
   // Git
   gitEmail: z.string().email().default('agent@claude-remote.local'),

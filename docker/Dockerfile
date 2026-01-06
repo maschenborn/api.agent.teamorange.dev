@@ -25,7 +25,8 @@ RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
 RUN npm install -g @anthropic-ai/claude-code@latest
 
 # Create non-root user for security
-RUN useradd -m -s /bin/bash agent
+# UID 1001 matches the webhook server's nodejs user for consistent file permissions
+RUN useradd -m -s /bin/bash -u 1001 agent
 
 # Create workspace directory
 RUN mkdir -p /workspace && chown agent:agent /workspace
