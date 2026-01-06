@@ -61,10 +61,35 @@ if [ "$ANALYSIS_MODE" = "true" ]; then
 elif [ "$USE_RESUME" = "true" ]; then
     # Resume mode: continue existing session
     echo "Resuming previous session..."
-    exec claude --resume -p "$AGENT_PROMPT" \
-        --dangerously-skip-permissions \
-        --max-turns "${MAX_TURNS:-50}" \
-        --output-format json
+
+    # Find Claude session ID from projects directory
+    # Sessions are stored in ~/.claude/projects/<project-hash>/sessions/<session-id>
+    CLAUDE_SESSION_ID=""
+
+    if [ -d "/home/agent/.claude/projects" ]; then
+        # Get the most recent session ID
+        CLAUDE_SESSION_ID=$(find /home/agent/.claude/projects -type d -name "sessions" -exec sh -c 'ls -t "$1" 2>/dev/null | head -1' _ {} \; 2>/dev/null | head -1)
+
+        if [ -n "$CLAUDE_SESSION_ID" ]; then
+            echo "Found Claude session: $CLAUDE_SESSION_ID"
+        else
+            echo "Warning: No Claude session found in projects directory"
+        fi
+    fi
+
+    if [ -n "$CLAUDE_SESSION_ID" ]; then
+        exec claude --resume "$CLAUDE_SESSION_ID" -p "$AGENT_PROMPT" \
+            --dangerously-skip-permissions \
+            --max-turns "${MAX_TURNS:-50}" \
+            --output-format json
+    else
+        # Fallback to new session if no Claude session found
+        echo "Warning: Falling back to new session (no Claude session found)"
+        exec claude -p "$AGENT_PROMPT" \
+            --dangerously-skip-permissions \
+            --max-turns "${MAX_TURNS:-50}" \
+            --output-format json
+    fi
 
 else
     # New session / Execution mode: full autonomy, JSON output
