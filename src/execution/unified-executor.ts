@@ -77,6 +77,14 @@ export async function executeTask(request: ExecutionRequest): Promise<ExecutionR
   // Build the prompt
   const agentPrompt = buildAgentPrompt(request);
 
+  // Debug: Write prompt to session directory
+  if (sessionPaths) {
+    const fs = await import('fs/promises');
+    const debugPath = `${sessionPaths.workspace}/_debug_prompt.txt`;
+    await fs.writeFile(debugPath, agentPrompt, 'utf-8');
+    logger.info({ debugPath, promptLength: agentPrompt.length }, 'Debug prompt written');
+  }
+
   try {
     // Build environment variables
     const envVars = buildEnvVars(request, agentPrompt);
