@@ -58,8 +58,8 @@ export const executeRequestSchema = z.object({
   /** Task prompt/description (required) */
   prompt: z.string().min(1).max(50000),
 
-  /** Agent ID: "test", "moco", "default" */
-  agentId: z.enum(['test', 'moco', 'default']).optional().default('default'),
+  /** Agent ID: "test", "crm", "default" */
+  agentId: z.enum(['test', 'crm', 'default']).optional().default('default'),
 
   /** Resume existing session by ID */
   sessionId: z.string().regex(/^[a-f0-9]{6}$/).optional(),
