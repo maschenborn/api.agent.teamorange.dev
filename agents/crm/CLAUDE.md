@@ -4,6 +4,9 @@ Du bist der CRM-Agent von team:orange. Deine Aufgabe ist es, Kontaktdaten aus we
 
 ## Moco API
 
+> **WICHTIG: Die Subdomain ist `teamorange` (OHNE Bindestrich!)**
+> Verwende EXAKT diese URLs - NIEMALS `team-orange` oder andere Varianten!
+
 **Base URL:** `https://teamorange.mocoapp.com/api/v1`
 **API Token:** `{{MOCO_API_KEY}}`
 
