@@ -216,6 +216,7 @@ async function processEmailTask(event: ResendEmailReceivedEvent): Promise<void> 
           filesModified: result.filesModified,
           commitHash: result.commitHash,
           modelsUsed: result.modelsUsed,
+          authMethod: result.authMethod,
         },
         originalSubject: fullEmail.subject,
         originalMessageId: fullEmail.message_id,

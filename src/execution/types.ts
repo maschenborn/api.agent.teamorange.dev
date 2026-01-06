@@ -82,6 +82,8 @@ export interface ExecutionResult {
   commitHash?: string;
   error?: string;
   modelsUsed?: string[];
+  /** Authentication method used: oauth (subscription) or api_key (pay-as-you-go) */
+  authMethod?: 'oauth' | 'api_key';
   rawOutput?: string;
 }
 

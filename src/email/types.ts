@@ -91,4 +91,5 @@ export interface AgentResult {
   commitHash?: string;
   deployUrl?: string;
   modelsUsed?: string[]; // e.g. ['Haiku 4.5', 'Opus 4.5']
+  authMethod?: 'oauth' | 'api_key'; // oauth = Subscription, api_key = Pay-as-you-go
 }

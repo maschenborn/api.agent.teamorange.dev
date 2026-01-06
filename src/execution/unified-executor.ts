@@ -283,6 +283,11 @@ function buildEnvVars(request: ExecutionRequest, prompt: string): string[] {
     envVars.push(`FIRECRAWL_API_KEY=${config.firecrawlApiKey}`);
   }
 
+  // Anthropic API Key (fallback if OAuth expires)
+  if (config.anthropicApiKey) {
+    envVars.push(`ANTHROPIC_API_KEY=${config.anthropicApiKey}`);
+  }
+
   return envVars;
 }
 
@@ -297,10 +302,21 @@ function stripDockerStreamHeaders(output: string): string {
 }
 
 /**
+ * Extract auth method from container output
+ */
+function extractAuthMethod(output: string): 'oauth' | 'api_key' | undefined {
+  const authMatch = output.match(/\[AUTH_METHOD:(oauth|api_key)\]/);
+  return authMatch ? (authMatch[1] as 'oauth' | 'api_key') : undefined;
+}
+
+/**
  * Parse Claude's JSON output
  */
 function parseAgentOutput(output: string): ExecutionResult {
   const cleanOutput = stripDockerStreamHeaders(output);
+
+  // Extract auth method
+  const authMethod = extractAuthMethod(output);
 
   // Try to find JSON result
   const jsonMatch = cleanOutput.match(/\{"type":"result"[\s\S]*\}/);
@@ -334,6 +350,7 @@ function parseAgentOutput(output: string): ExecutionResult {
           filesModified,
           commitHash: commitMatch?.[1],
           modelsUsed: modelsUsed.length > 0 ? modelsUsed : undefined,
+          authMethod,
           rawOutput: output.slice(-5000),
         };
       }
@@ -357,6 +374,7 @@ function parseAgentOutput(output: string): ExecutionResult {
     success: true,
     summary: responseLines.join('\n').slice(-3000) || 'Aufgabe abgeschlossen',
     filesModified: [],
+    authMethod,
     rawOutput: output.slice(-5000),
   };
 }

@@ -20,6 +20,12 @@ export function taskCompletedTemplate(params: TaskCompletedParams): string {
     ? `<p><strong>Modelle:</strong> ${result.modelsUsed.join(', ')}</p>`
     : '';
 
+  // Auth method: oauth = Subscription (free), api_key = Pay-as-you-go
+  const authLabel = result.authMethod === 'api_key' ? 'API (kostenpflichtig)' : 'Subscription';
+  const authSection = result.authMethod
+    ? `<p style="font-size: 11px; color: #888;"><strong>Auth:</strong> ${authLabel}</p>`
+    : '';
+
   return `
 <!DOCTYPE html>
 <html>
@@ -52,8 +58,9 @@ export function taskCompletedTemplate(params: TaskCompletedParams): string {
       ${filesSection}
       ${commitSection}
       ${modelsSection}
+      ${authSection}
 
-      <p>Die Änderungen wurden committed und gepusht. Du kannst sie jetzt im Repository einsehen.</p>
+      <p>Die Aenderungen wurden committed und gepusht. Du kannst sie jetzt im Repository einsehen.</p>
 
       <p class="footer">
         — Claude Remote Agent<br>
