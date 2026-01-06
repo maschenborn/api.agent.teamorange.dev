@@ -57,6 +57,7 @@ curl -X POST "https://teamorange.mocoapp.com/api/v1/companies" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Beispiel GmbH",
+    "type": "customer",
     "ust_id_nr": "DE123456789",
     "street": "Musterstrasse 1",
     "zip": "12345",
@@ -67,6 +68,7 @@ curl -X POST "https://teamorange.mocoapp.com/api/v1/companies" \
   }'
 ```
 **Pflichtfeld:** `name`
+**Type:** `customer` (Kunde), `supplier` (Lieferant), oder `organization` (sonstige Firma)
 **Response:** `{"id": 762626575, ...}` -> Link: `https://teamorange.mocoapp.com/companies/762626575`
 
 ---
@@ -86,6 +88,11 @@ Extrahiere aus Signatur und Body:
   - "Du" wenn: informelle Anrede, Vorname verwendet, lockerer Ton
   - "Sie" wenn: formelle Anrede, Nachname verwendet, geschaeftlicher Ton
   - **Im Zweifel immer "Sie"**
+- **Firmentyp:** Bestimme aus dem Kontext der Email
+  - `customer`: Anfrage fuer unsere Dienstleistungen, potentieller Kunde
+  - `supplier`: Angebot an uns, Dienstleister/Lieferant
+  - `organization`: Unklar oder weder Kunde noch Lieferant
+  - **Im Zweifel: `customer`** (die meisten Emails sind von potentiellen Kunden)
 
 ### 2. Fehlende Daten recherchieren
 **WICHTIG: Proaktiv mitdenken, nicht nur extrahieren!**
@@ -124,6 +131,7 @@ Immer die Moco-Links in der Antwort mitliefern!
 Ich habe folgende Daten in Moco angelegt:
 
 **Firma:** Beispiel GmbH (neu angelegt)
+- Typ: Kunde
 - Adresse: Musterstrasse 1, 12345 Berlin (aus Impressum ergaenzt)
 - USt-ID: DE123456789 (aus Impressum ergaenzt)
 - Website: https://beispiel.de
