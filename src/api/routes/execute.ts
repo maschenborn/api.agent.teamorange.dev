@@ -12,7 +12,7 @@ import { jwtAuth } from '../middleware/jwt-auth.js';
 import { executeTask } from '../../execution/unified-executor.js';
 import { getAgentById } from '../../agents/registry.js';
 import { getOrCreateSession, createSession, hasClaudeSession } from '../../session/index.js';
-import { analyzeTaskSafety } from '../../agent/safety-analyzer.js';
+import { analyzeRequest, type GuardrailResult } from '../../guardrail/index.js';
 import { config } from '../../config/index.js';
 import { logger } from '../../utils/logger.js';
 import type { ExecutionRequest } from '../../execution/types.js';
@@ -90,24 +90,60 @@ executeRouter.post('/', async (req: AuthenticatedRequest, res: Response) => {
       logger.info({ sessionId }, 'Created new session');
     }
 
-    // Safety analysis (unless skipped)
+    // =============================================
+    // STAGE 1: Guardrail Analysis (NO execution rights)
+    // Fast pattern matching + optional AI analysis
+    // =============================================
+    let guardrailResult: GuardrailResult | undefined;
+
     if (!request.skipSafetyCheck) {
-      const safetyResult = await analyzeTaskSafety(request.prompt);
-      if (!safetyResult.approved) {
+      guardrailResult = await analyzeRequest(request.prompt);
+
+      logger.info(
+        {
+          executionId,
+          decision: guardrailResult.decision,
+          reason: guardrailResult.reason,
+          confidence: guardrailResult.confidence,
+          method: guardrailResult.analysisMethod,
+          durationMs: guardrailResult.durationMs,
+        },
+        'Guardrail analysis completed'
+      );
+
+      if (guardrailResult.decision === 'BLOCKED') {
         logger.warn(
-          { executionId, reason: safetyResult.reason },
-          'Task rejected by safety analysis'
+          { executionId, reason: guardrailResult.reason },
+          'Request blocked by Guardrail'
         );
-        const error: ApiError = {
-          error: 'Task rejected by safety analysis',
-          code: 'SAFETY_REJECTED',
-          details: {
-            reason: safetyResult.reason,
-            explanation: safetyResult.explanation,
-            suggestion: safetyResult.suggestedClarification,
+
+        res.status(403).json({
+          executionId,
+          status: 'blocked',
+          guardrail: {
+            decision: guardrailResult.decision,
+            reason: guardrailResult.reason,
+            explanation: guardrailResult.explanation,
+            confidence: guardrailResult.confidence,
+            analysisMethod: guardrailResult.analysisMethod,
           },
-        };
-        res.status(400).json(error);
+          message: 'Anfrage durch Sicherheits-Guardrail abgelehnt',
+        });
+        return;
+      }
+
+      if (guardrailResult.decision === 'ESCALATE') {
+        // Future: escalate to human review
+        // For now, treat as blocked
+        res.status(403).json({
+          executionId,
+          status: 'escalated',
+          guardrail: {
+            decision: guardrailResult.decision,
+            explanation: guardrailResult.explanation,
+          },
+          message: 'Anfrage erfordert manuelle Prüfung',
+        });
         return;
       }
     }
@@ -158,6 +194,14 @@ executeRouter.post('/', async (req: AuthenticatedRequest, res: Response) => {
         error: result.error,
         modelsUsed: result.modelsUsed,
       },
+      guardrail: guardrailResult
+        ? {
+            decision: guardrailResult.decision,
+            confidence: guardrailResult.confidence,
+            analysisMethod: guardrailResult.analysisMethod,
+            durationMs: guardrailResult.durationMs,
+          }
+        : undefined,
       startedAt: new Date(startTime).toISOString(),
       completedAt: new Date().toISOString(),
       durationMs: Date.now() - startTime,

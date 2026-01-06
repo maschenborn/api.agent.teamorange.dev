@@ -86,6 +86,19 @@ export const executeRequestSchema = z.object({
 export type ExecuteRequest = z.infer<typeof executeRequestSchema>;
 
 // ============================================
+// Guardrail Response
+// ============================================
+
+export interface GuardrailInfo {
+  decision: 'APPROVED' | 'BLOCKED' | 'ESCALATE';
+  reason?: string;
+  explanation?: string;
+  confidence: number;
+  analysisMethod: 'pattern' | 'ai' | 'hybrid';
+  durationMs?: number;
+}
+
+// ============================================
 // Execute Response
 // ============================================
 
@@ -97,7 +110,7 @@ export interface ExecuteResponse {
   sessionId?: string;
 
   /** Execution status */
-  status: 'completed' | 'failed';
+  status: 'completed' | 'failed' | 'blocked' | 'escalated';
 
   /** Execution result */
   result: {
@@ -108,6 +121,9 @@ export interface ExecuteResponse {
     error?: string;
     modelsUsed?: string[];
   };
+
+  /** Guardrail analysis result */
+  guardrail?: GuardrailInfo;
 
   /** Timestamps */
   startedAt: string;

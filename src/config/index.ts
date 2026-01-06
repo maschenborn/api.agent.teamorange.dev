@@ -36,6 +36,9 @@ function loadConfig(): Config {
     mocoApiKey: process.env.MOCO_API_KEY,
     firecrawlApiKey: process.env.FIRECRAWL_API_KEY,
 
+    // Guardrail AI
+    anthropicApiKey: process.env.ANTHROPIC_API_KEY,
+
     // Git
     gitEmail: process.env.GIT_EMAIL,
     gitName: process.env.GIT_NAME,

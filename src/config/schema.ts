@@ -41,6 +41,9 @@ export const configSchema = z.object({
   mocoApiKey: z.string().optional(),
   firecrawlApiKey: z.string().optional(),
 
+  // Guardrail AI (optional - enables AI-powered threat detection)
+  anthropicApiKey: z.string().optional(),
+
   // Git
   gitEmail: z.string().email().default('agent@claude-remote.local'),
   gitName: z.string().default('Claude Remote Agent'),
