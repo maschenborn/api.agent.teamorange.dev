@@ -1,8 +1,36 @@
 /**
- * Agent Registry - Maps email addresses to agent configurations
+ * Agent Registry - Loads agent configurations from filesystem
+ *
+ * Agents are defined in the /agents directory:
+ *   agents/
+ *     crm/
+ *       CLAUDE.md      # System prompt
+ *       config.json    # Metadata (id, name, description, needsDocker, env)
+ *       .mcp.json      # Optional: MCP server configuration
  *
  * Email an xyz@agent.teamorange.dev → Agent "xyz" wird verwendet
  */
+
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { logger } from '../utils/logger.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// agents/ folder is at project root, not in src/
+const AGENTS_DIR = path.resolve(__dirname, '../../agents');
+
+export interface McpServerConfig {
+  command: string;
+  args: string[];
+  env?: Record<string, string>;
+}
+
+export interface McpConfig {
+  mcpServers: Record<string, McpServerConfig>;
+}
 
 export interface AgentConfig {
   /** Unique identifier */
@@ -11,91 +39,145 @@ export interface AgentConfig {
   name: string;
   /** Description of what this agent does */
   description: string;
-  /** System prompt for Claude Code */
+  /** System prompt for Claude Code (loaded from CLAUDE.md) */
   systemPrompt: string;
   /** Whether this agent needs Docker execution (vs simple response) */
   needsDocker: boolean;
   /** Environment variables to pass to the container */
   env?: Record<string, string>;
-  /** MCP servers to enable (for future use) */
-  mcpServers?: string[];
+  /** MCP configuration (loaded from .mcp.json) */
+  mcpConfig?: McpConfig;
+  /** Path to agent directory */
+  agentDir: string;
 }
 
-// Agent configurations
-const agents: Record<string, AgentConfig> = {
-  test: {
-    id: 'test',
-    name: 'Test Agent',
-    description: 'Einfacher Test-Agent der mit Statistiken antwortet',
+// In-memory cache of loaded agents
+let agentCache: Record<string, AgentConfig> = {};
+let defaultAgentCache: AgentConfig | null = null;
+let isInitialized = false;
+
+/**
+ * Load a single agent configuration from its directory
+ */
+function loadAgentFromDir(agentDir: string): AgentConfig | null {
+  const agentId = path.basename(agentDir);
+
+  try {
+    // Load config.json (required)
+    const configPath = path.join(agentDir, 'config.json');
+    if (!fs.existsSync(configPath)) {
+      logger.warn({ agentId, configPath }, 'Agent config.json not found');
+      return null;
+    }
+    const configRaw = fs.readFileSync(configPath, 'utf-8');
+    const config = JSON.parse(configRaw);
+
+    // Load CLAUDE.md as systemPrompt (required)
+    const claudeMdPath = path.join(agentDir, 'CLAUDE.md');
+    if (!fs.existsSync(claudeMdPath)) {
+      logger.warn({ agentId, claudeMdPath }, 'Agent CLAUDE.md not found');
+      return null;
+    }
+    const systemPrompt = fs.readFileSync(claudeMdPath, 'utf-8');
+
+    // Load .mcp.json (optional)
+    let mcpConfig: McpConfig | undefined;
+    const mcpPath = path.join(agentDir, '.mcp.json');
+    if (fs.existsSync(mcpPath)) {
+      try {
+        const mcpRaw = fs.readFileSync(mcpPath, 'utf-8');
+        mcpConfig = JSON.parse(mcpRaw);
+      } catch (err) {
+        logger.warn({ agentId, mcpPath, error: err }, 'Failed to parse .mcp.json');
+      }
+    }
+
+    const agentConfig: AgentConfig = {
+      id: config.id || agentId,
+      name: config.name || agentId,
+      description: config.description || '',
+      systemPrompt,
+      needsDocker: config.needsDocker ?? true,
+      env: config.env,
+      mcpConfig,
+      agentDir,
+    };
+
+    logger.debug({ agentId, hasMcp: !!mcpConfig }, 'Loaded agent configuration');
+    return agentConfig;
+  } catch (err) {
+    logger.error({ agentId, error: err }, 'Failed to load agent configuration');
+    return null;
+  }
+}
+
+/**
+ * Initialize the agent registry by loading all agents from filesystem
+ */
+export function initializeAgentRegistry(): void {
+  if (isInitialized) {
+    return;
+  }
+
+  agentCache = {};
+  defaultAgentCache = null;
+
+  if (!fs.existsSync(AGENTS_DIR)) {
+    logger.warn({ agentsDir: AGENTS_DIR }, 'Agents directory not found');
+    isInitialized = true;
+    return;
+  }
+
+  const entries = fs.readdirSync(AGENTS_DIR, { withFileTypes: true });
+
+  for (const entry of entries) {
+    if (!entry.isDirectory()) {
+      continue;
+    }
+
+    const agentDir = path.join(AGENTS_DIR, entry.name);
+    const agent = loadAgentFromDir(agentDir);
+
+    if (agent) {
+      agentCache[agent.id] = agent;
+
+      // Special handling for default agent
+      if (agent.id === 'default') {
+        defaultAgentCache = agent;
+      }
+    }
+  }
+
+  logger.info(
+    { agentCount: Object.keys(agentCache).length, agents: Object.keys(agentCache) },
+    'Agent registry initialized'
+  );
+
+  isInitialized = true;
+}
+
+/**
+ * Get the default agent (fallback for unknown addresses)
+ */
+function getDefaultAgent(): AgentConfig {
+  if (!isInitialized) {
+    initializeAgentRegistry();
+  }
+
+  if (defaultAgentCache) {
+    return defaultAgentCache;
+  }
+
+  // Fallback if no default agent is defined
+  return {
+    id: 'default',
+    name: 'Default Agent',
+    description: 'Standard-Agent fuer unbekannte Adressen',
+    systemPrompt: 'Du bist ein Hilfs-Agent. Beantworte die Anfrage so gut wie moeglich auf Deutsch.',
     needsDocker: true,
-    systemPrompt: `Du bist ein Test-Agent für team:orange.
-
-## Deine Aufgabe
-Beantworte die Anfrage des Nutzers und füge am Ende folgende Statistiken hinzu:
-
-- Modell: Claude (via Claude Code MAX Subscription)
-- Agent-ID: test
-- Zeitstempel: Aktuelles Datum/Uhrzeit
-- Status: Funktioniert ✓
-
-## Anweisungen
-1. Lies die Anfrage des Nutzers
-2. Antworte hilfreich und freundlich auf Deutsch
-3. Füge die Statistiken am Ende hinzu
-4. Halte die Antwort kurz und prägnant
-
-## Format
-Antworte im Klartext, kein Markdown.
-`,
-  },
-
-  // Placeholder für zukünftige Agents
-  moco: {
-    id: 'moco',
-    name: 'Moco CRM Agent',
-    description: 'Agent mit Zugriff auf Moco CRM via MCP',
-    needsDocker: true,
-    mcpServers: ['moco'],
-    systemPrompt: `Du bist ein Agent für Moco CRM Operationen.
-
-## Verfügbare Tools
-- Moco MCP Server für CRM-Zugriff
-
-## Anweisungen
-1. Analysiere die Anfrage
-2. Führe die gewünschte Moco-Operation aus
-3. Bestätige die Ausführung
-
-## Wichtig
-- Alle Inhalte auf Deutsch
-- Nur Moco-relevante Anfragen bearbeiten
-`,
-  },
-};
-
-// Default agent for unknown addresses
-const defaultAgent: AgentConfig = {
-  id: 'default',
-  name: 'Default Agent',
-  description: 'Standard-Agent für unbekannte Adressen',
-  needsDocker: true,
-  systemPrompt: `Du bist ein Hilfs-Agent für team:orange.
-
-## Deine Aufgabe
-Beantworte die Anfrage des Nutzers so gut wie möglich.
-
-## Anweisungen
-1. Lies die Anfrage
-2. Antworte hilfreich auf Deutsch
-3. Falls du die Aufgabe nicht erledigen kannst, erkläre warum
-
-## Hinweis
-Diese Email wurde an eine unbekannte Adresse gesendet.
-Für spezifische Aufgaben nutze:
-- test@agent.teamorange.dev - Test & Statistiken
-- moco@agent.teamorange.dev - Moco CRM Operationen
-`,
-};
+    agentDir: '',
+  };
+}
 
 /**
  * Get agent configuration based on recipient email address
@@ -103,38 +185,70 @@ Für spezifische Aufgaben nutze:
  * @returns Agent configuration
  */
 export function getAgentForEmail(recipientEmail: string): AgentConfig {
+  if (!isInitialized) {
+    initializeAgentRegistry();
+  }
+
   // Extract the local part (before @)
   const localPart = recipientEmail.split('@')[0]?.toLowerCase();
 
   if (!localPart) {
-    return defaultAgent;
+    return getDefaultAgent();
   }
 
-  return agents[localPart] || defaultAgent;
+  return agentCache[localPart] || getDefaultAgent();
 }
 
 /**
  * Get all registered agents
  */
 export function getAllAgents(): AgentConfig[] {
-  return Object.values(agents);
+  if (!isInitialized) {
+    initializeAgentRegistry();
+  }
+
+  return Object.values(agentCache);
 }
 
 /**
  * Check if an agent exists
  */
 export function hasAgent(id: string): boolean {
-  return id in agents;
+  if (!isInitialized) {
+    initializeAgentRegistry();
+  }
+
+  return id in agentCache;
 }
 
 /**
  * Get agent by ID
- * @param id - Agent ID (e.g. "test", "moco", "default")
+ * @param id - Agent ID (e.g. "test", "crm", "default")
  * @returns Agent configuration or undefined
  */
 export function getAgentById(id: string): AgentConfig | undefined {
-  if (id === 'default') {
-    return defaultAgent;
+  if (!isInitialized) {
+    initializeAgentRegistry();
   }
-  return agents[id];
+
+  if (id === 'default') {
+    return getDefaultAgent();
+  }
+
+  return agentCache[id];
+}
+
+/**
+ * Reload agent registry (useful for development)
+ */
+export function reloadAgentRegistry(): void {
+  isInitialized = false;
+  initializeAgentRegistry();
+}
+
+/**
+ * Get path to agents directory
+ */
+export function getAgentsDir(): string {
+  return AGENTS_DIR;
 }

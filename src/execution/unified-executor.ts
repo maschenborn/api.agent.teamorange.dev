@@ -10,7 +10,8 @@ import { config } from '../config/index.js';
 import { logger } from '../utils/logger.js';
 import { AgentExecutionError } from '../utils/errors.js';
 import { getSessionPaths, type SessionPaths } from '../session/index.js';
-import { injectMcpConfig } from './mcp-injector.js';
+import { injectMcpConfig, injectMcpConfigDirect, type McpJsonFormat } from './mcp-injector.js';
+import type { McpConfig } from '../agents/registry.js';
 import type { ExecutionRequest, ExecutionResult, ExecutionStatus } from './types.js';
 
 const docker = new Docker();
@@ -56,10 +57,21 @@ export async function executeTask(request: ExecutionRequest): Promise<ExecutionR
     logger.debug({ sessionPaths: sessionPaths.root }, 'Using session paths');
   }
 
-  // Inject MCP config if provided
-  if (request.mcpConfig && sessionPaths) {
-    await injectMcpConfig(sessionPaths, request.mcpConfig);
-    logger.info({ preset: request.mcpConfig.preset }, 'MCP config injected');
+  // Inject MCP config: request.mcpConfig (preset) or agent's mcpConfig (from .mcp.json)
+  if (sessionPaths) {
+    if (request.mcpConfig) {
+      // Preset-based MCP config from request
+      await injectMcpConfig(sessionPaths, request.mcpConfig);
+      logger.info({ preset: request.mcpConfig.preset }, 'MCP config injected (preset)');
+    } else if (agentConfig.mcpConfig) {
+      // Agent-defined MCP config from .mcp.json
+      const resolvedMcpConfig = resolveEnvPlaceholders(agentConfig.mcpConfig);
+      await injectMcpConfigDirect(sessionPaths, resolvedMcpConfig);
+      logger.info(
+        { servers: Object.keys(agentConfig.mcpConfig.mcpServers || {}) },
+        'MCP config injected (agent)'
+      );
+    }
   }
 
   // Build the prompt
@@ -268,10 +280,13 @@ function buildEnvVars(request: ExecutionRequest, prompt: string): string[] {
     envVars.push(`REPO_URL=${repoUrl}`);
   }
 
-  // Agent-specific env vars
+  // Agent-specific env vars (resolve ${VAR} placeholders)
   if (request.agentConfig.env) {
     for (const [key, value] of Object.entries(request.agentConfig.env)) {
-      envVars.push(`${key}=${value}`);
+      const resolvedValue = resolveEnvValue(value);
+      if (resolvedValue) {
+        envVars.push(`${key}=${resolvedValue}`);
+      }
     }
   }
 
@@ -387,4 +402,56 @@ function formatModelName(modelId: string): string {
   if (modelId.includes('sonnet')) return 'Sonnet 4';
   if (modelId.includes('haiku')) return 'Haiku 4.5';
   return modelId;
+}
+
+/**
+ * Resolve ${VAR} placeholders in MCP config from process.env
+ *
+ * Example: "${FIRECRAWL_API_KEY}" → actual value from process.env
+ */
+function resolveEnvPlaceholders(mcpConfig: McpConfig): McpJsonFormat {
+  const resolved: McpJsonFormat = { mcpServers: {} };
+
+  for (const [serverName, serverConfig] of Object.entries(mcpConfig.mcpServers || {})) {
+    resolved.mcpServers[serverName] = {
+      command: serverConfig.command,
+      args: serverConfig.args,
+      env: serverConfig.env ? resolveEnvObject(serverConfig.env) : undefined,
+    };
+  }
+
+  return resolved;
+}
+
+/**
+ * Resolve ${VAR} placeholders in an env object
+ */
+function resolveEnvObject(env: Record<string, string>): Record<string, string> {
+  const resolved: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(env)) {
+    resolved[key] = resolveEnvValue(value);
+  }
+
+  return resolved;
+}
+
+/**
+ * Resolve a single ${VAR} placeholder
+ */
+function resolveEnvValue(value: string): string {
+  // Match ${VAR_NAME} pattern
+  const match = value.match(/^\$\{(\w+)\}$/);
+  if (match) {
+    const envVar = match[1];
+    const envValue = process.env[envVar];
+    if (!envValue) {
+      logger.warn({ envVar }, 'Environment variable not set, using empty string');
+      return '';
+    }
+    return envValue;
+  }
+
+  // No placeholder, return as-is
+  return value;
 }

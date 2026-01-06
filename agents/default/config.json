@@ -1,0 +1,6 @@
+{
+  "id": "default",
+  "name": "Default Agent",
+  "description": "Standard-Agent fuer unbekannte Adressen",
+  "needsDocker": true
+}

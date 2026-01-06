@@ -21,7 +21,7 @@ interface McpConfig {
   }>;
 }
 
-interface McpJsonFormat {
+export interface McpJsonFormat {
   mcpServers: Record<
     string,
     {
@@ -96,6 +96,34 @@ function buildMcpJson(mcpConfig: McpConfig): McpJsonFormat {
   }
 
   return { mcpServers };
+}
+
+/**
+ * Inject a pre-built MCP config directly (from agent's .mcp.json)
+ *
+ * Unlike injectMcpConfig which builds from presets, this writes
+ * an already-resolved McpJsonFormat directly.
+ */
+export async function injectMcpConfigDirect(
+  sessionPaths: SessionPaths,
+  mcpJson: McpJsonFormat
+): Promise<void> {
+  if (!mcpJson.mcpServers || Object.keys(mcpJson.mcpServers).length === 0) {
+    logger.debug('No MCP servers to inject (direct)');
+    return;
+  }
+
+  const mcpJsonPath = path.join(sessionPaths.claudeHome, '.mcp.json');
+
+  await fs.writeFile(mcpJsonPath, JSON.stringify(mcpJson, null, 2));
+
+  // Make readable by sandbox user
+  await fs.chmod(mcpJsonPath, 0o644);
+
+  logger.info(
+    { path: mcpJsonPath, servers: Object.keys(mcpJson.mcpServers) },
+    'MCP config injected (direct)'
+  );
 }
 
 /**
