@@ -51,10 +51,14 @@ if [ -z "$AGENT_PROMPT" ]; then
     exit 1
 fi
 
+# Model selection (default: opus)
+MODEL="${AGENT_MODEL:-opus}"
+
 # Build Claude Code command based on mode
 if [ "$ANALYSIS_MODE" = "true" ]; then
     # Analysis mode: NO --dangerously-skip-permissions, JSON output
     exec claude -p "$AGENT_PROMPT" \
+        --model "$MODEL" \
         --max-turns "${MAX_TURNS:-1}" \
         --output-format json
 
@@ -81,6 +85,7 @@ elif [ "$USE_RESUME" = "true" ]; then
 
     if [ -n "$CLAUDE_SESSION_ID" ]; then
         exec claude --resume "$CLAUDE_SESSION_ID" -p "$AGENT_PROMPT" \
+            --model "$MODEL" \
             --dangerously-skip-permissions \
             --max-turns "${MAX_TURNS:-50}" \
             --output-format json
@@ -88,6 +93,7 @@ elif [ "$USE_RESUME" = "true" ]; then
         # Fallback to new session if no Claude session found
         echo "Warning: Falling back to new session (no Claude session found)"
         exec claude -p "$AGENT_PROMPT" \
+            --model "$MODEL" \
             --dangerously-skip-permissions \
             --max-turns "${MAX_TURNS:-50}" \
             --output-format json
@@ -96,6 +102,7 @@ elif [ "$USE_RESUME" = "true" ]; then
 else
     # New session / Execution mode: full autonomy, JSON output
     exec claude -p "$AGENT_PROMPT" \
+        --model "$MODEL" \
         --dangerously-skip-permissions \
         --max-turns "${MAX_TURNS:-50}" \
         --output-format json

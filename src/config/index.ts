@@ -27,6 +27,7 @@ function loadConfig(): Config {
 
     // Agent Container
     agentDockerImage: process.env.AGENT_DOCKER_IMAGE,
+    agentDefaultModel: process.env.AGENT_DEFAULT_MODEL,
     maxAgentTurns: parseInt(process.env.MAX_AGENT_TURNS || '50', 10),
     agentTimeoutMs: parseInt(process.env.AGENT_TIMEOUT_MS || '300000', 10),
     agentMemoryMb: parseInt(process.env.AGENT_MEMORY_MB || '2048', 10),

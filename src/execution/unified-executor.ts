@@ -238,6 +238,7 @@ function buildEnvVars(request: ExecutionRequest, prompt: string): string[] {
     `MAX_TURNS=${request.resources.maxTurns}`,
     `AGENT_ID=${request.agentConfig.id}`,
     `EXECUTION_ID=${request.executionId}`,
+    `AGENT_MODEL=${config.agentDefaultModel}`, // Default: opus
   ];
 
   // Session management
