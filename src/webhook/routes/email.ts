@@ -4,7 +4,7 @@ import type { ResendEmailReceivedEvent, RejectionReason } from '../../email/type
 import { emailClient } from '../../email/client.js';
 import { parseTaskFromEmail } from '../../agent/task-parser.js';
 import { executeTask } from '../../execution/unified-executor.js';
-import { analyzeTaskSafety } from '../../agent/safety-analyzer.js';
+import { analyzeRequest, type GuardrailResult, type BlockReason } from '../../guardrail/index.js';
 import { logger } from '../../utils/logger.js';
 import { getOrCreateSession, hasClaudeSession } from '../../session/index.js';
 import { getAgentForEmail } from '../../agents/registry.js';
@@ -100,21 +100,46 @@ async function processEmailTask(event: ResendEmailReceivedEvent): Promise<void> 
     // Add session ID to task
     task.sessionId = session.id;
 
-    // 4. Safety analysis (before YOLO execution)
-    logger.info({ emailId, taskId: task.id, sessionId: session.id }, 'Running safety analysis');
-    const safetyResult = await analyzeTaskSafety(task.description);
+    // 4. Guardrail analysis (before execution)
+    logger.info({ emailId, taskId: task.id, sessionId: session.id }, 'Running guardrail analysis');
+    const guardrailResult = await analyzeRequest(task.description);
 
-    if (!safetyResult.approved) {
+    logger.info(
+      {
+        emailId,
+        taskId: task.id,
+        sessionId: session.id,
+        decision: guardrailResult.decision,
+        reason: guardrailResult.reason,
+        confidence: guardrailResult.confidence,
+        method: guardrailResult.analysisMethod,
+        durationMs: guardrailResult.durationMs,
+      },
+      'Guardrail analysis completed'
+    );
+
+    if (guardrailResult.decision === 'BLOCKED') {
       logger.warn(
-        { emailId, taskId: task.id, sessionId: session.id, reason: safetyResult.reason, explanation: safetyResult.explanation },
-        'Task rejected by safety analysis'
+        { emailId, taskId: task.id, sessionId: session.id, reason: guardrailResult.reason, explanation: guardrailResult.explanation },
+        'Task rejected by guardrail'
       );
+
+      // Map BlockReason to RejectionReason for email
+      const mapBlockReasonToRejection = (reason?: BlockReason): RejectionReason => {
+        switch (reason) {
+          case 'UNCLEAR':
+            return 'unclear';
+          case 'COMPETENCE_EXCEEDED':
+            return 'too_complex';
+          default:
+            return 'harmful'; // DESTRUCTIVE, PROMPT_INJECTION, FINANCIAL_RISK, SECURITY_RISK, OTHER
+        }
+      };
 
       await emailClient.sendTaskRejected({
         to: fullEmail.from,
-        reason: safetyResult.reason as RejectionReason,
-        explanation: safetyResult.explanation,
-        suggestion: safetyResult.suggestedClarification,
+        reason: mapBlockReasonToRejection(guardrailResult.reason),
+        explanation: guardrailResult.explanation,
         originalSubject: fullEmail.subject,
         originalMessageId: fullEmail.message_id,
       });
@@ -122,7 +147,25 @@ async function processEmailTask(event: ResendEmailReceivedEvent): Promise<void> 
       return; // Stop processing - don't execute rejected tasks
     }
 
-    logger.info({ emailId, taskId: task.id, sessionId: session.id }, 'Safety analysis passed');
+    // Handle ESCALATE as a soft-block for now (future: notify admin)
+    if (guardrailResult.decision === 'ESCALATE') {
+      logger.warn(
+        { emailId, taskId: task.id, sessionId: session.id, explanation: guardrailResult.explanation },
+        'Task requires escalation - blocking for safety'
+      );
+
+      await emailClient.sendTaskRejected({
+        to: fullEmail.from,
+        reason: 'too_complex',
+        explanation: guardrailResult.explanation + ' Diese Anfrage erfordert manuelle Prüfung.',
+        originalSubject: fullEmail.subject,
+        originalMessageId: fullEmail.message_id,
+      });
+
+      return;
+    }
+
+    logger.info({ emailId, taskId: task.id, sessionId: session.id }, 'Guardrail analysis passed');
 
     // 5. Send acknowledgment (only after safety check passes)
     logger.info({ emailId, taskId: task.id, sessionId: session.id }, 'Sending task received acknowledgment');
