@@ -38,6 +38,9 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules
 COPY package*.json ./
 
+# Copy agent configurations (CLAUDE.md, config.json, .mcp.json)
+COPY agents ./agents
+
 # Copy agent sandbox files (will be built separately)
 COPY docker ./docker
 
