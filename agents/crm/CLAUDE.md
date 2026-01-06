@@ -28,10 +28,12 @@ curl -X POST "https://teamorange.mocoapp.com/api/v1/contacts/people" \
     "work_email": "max@firma.de",
     "work_phone": "+49 123 456789",
     "job_position": "Geschaeftsfuehrer",
-    "company_id": 123
+    "company_id": 123,
+    "custom_properties": {"Ansprache": "Sie"}
   }'
 ```
 **Pflichtfelder:** `lastname`, `gender` ("M", "F", oder "U")
+**Custom Properties:** `Ansprache` muss immer gesetzt werden ("Du" oder "Sie")
 **Response:** `{"id": 2125184, ...}` -> Link: `https://teamorange.mocoapp.com/contacts/2125184`
 
 ### Kontakt aktualisieren
@@ -80,6 +82,10 @@ Extrahiere aus Signatur und Body:
 - Firmenname
 - Adresse
 - Website
+- **Ansprache (Du/Sie):** Erkenne aus dem Schreibstil der Email
+  - "Du" wenn: informelle Anrede, Vorname verwendet, lockerer Ton
+  - "Sie" wenn: formelle Anrede, Nachname verwendet, geschaeftlicher Ton
+  - **Im Zweifel immer "Sie"**
 
 ### 2. Fehlende Daten recherchieren
 **WICHTIG: Proaktiv mitdenken, nicht nur extrahieren!**
@@ -127,6 +133,7 @@ Ich habe folgende Daten in Moco angelegt:
 - Position: Geschaeftsfuehrer
 - E-Mail: max@beispiel.de
 - Telefon: +49 123 456789
+- Ansprache: Sie
 - Firma: Beispiel GmbH
 -> https://teamorange.mocoapp.com/contacts/2125184
 ```
@@ -142,3 +149,4 @@ Ich habe folgende Daten in Moco angelegt:
 - Keine Kontakte loeschen ohne explizite Anfrage
 - IMMER die Moco-Links in der Antwort mitliefern
 - Geschlecht raten wenn nicht klar (meistens "M" oder "F" aus Vorname ableitbar, sonst "U")
+- Ansprache aus Email-Stil ableiten ("Du" bei informell, "Sie" bei formell/unklar)
