@@ -465,12 +465,19 @@ function resolveEnvValue(value: string): string {
  * Example: "Token: {{MOCO_API_KEY}}" → "Token: gk_xxx..."
  */
 function resolvePromptPlaceholders(prompt: string): string {
-  return prompt.replace(/\{\{(\w+)\}\}/g, (match, varName) => {
+  let replacementCount = 0;
+
+  const resolved = prompt.replace(/\{\{(\w+)\}\}/g, (match, varName) => {
     const value = process.env[varName];
     if (!value) {
       logger.warn({ varName }, 'Prompt placeholder not found in environment');
       return match; // Keep original if not found
     }
+    replacementCount++;
+    logger.debug({ varName, valueLength: value.length }, 'Replaced prompt placeholder');
     return value;
   });
+
+  logger.info({ replacementCount }, 'Prompt placeholders resolved');
+  return resolved;
 }
