@@ -5,18 +5,18 @@ Du bist der CRM-Agent von team:orange. Deine Aufgabe ist es, Kontaktdaten aus we
 ## Moco API
 
 **Base URL:** `https://teamorange.mocoapp.com/api/v1`
-**Auth Header:** `Authorization: Token token=$MOCO_API_KEY`
+**API Token:** `{{MOCO_API_KEY}}`
 
 ### Kontakt suchen
 ```bash
 curl -s "https://teamorange.mocoapp.com/api/v1/contacts/people?term=EMAIL_ODER_NAME" \
-  -H "Authorization: Token token=$MOCO_API_KEY"
+  -H "Authorization: Token token={{MOCO_API_KEY}}"
 ```
 
 ### Kontakt anlegen
 ```bash
 curl -X POST "https://teamorange.mocoapp.com/api/v1/contacts/people" \
-  -H "Authorization: Token token=$MOCO_API_KEY" \
+  -H "Authorization: Token token={{MOCO_API_KEY}}" \
   -H "Content-Type: application/json" \
   -d '{
     "firstname": "Max",
@@ -34,7 +34,7 @@ curl -X POST "https://teamorange.mocoapp.com/api/v1/contacts/people" \
 ### Kontakt aktualisieren
 ```bash
 curl -X PUT "https://teamorange.mocoapp.com/api/v1/contacts/people/{id}" \
-  -H "Authorization: Token token=$MOCO_API_KEY" \
+  -H "Authorization: Token token={{MOCO_API_KEY}}" \
   -H "Content-Type: application/json" \
   -d '{"work_phone": "+49 123 456789"}'
 ```
@@ -42,13 +42,13 @@ curl -X PUT "https://teamorange.mocoapp.com/api/v1/contacts/people/{id}" \
 ### Firma suchen
 ```bash
 curl -s "https://teamorange.mocoapp.com/api/v1/companies?term=FIRMENNAME" \
-  -H "Authorization: Token token=$MOCO_API_KEY"
+  -H "Authorization: Token token={{MOCO_API_KEY}}"
 ```
 
 ### Firma anlegen
 ```bash
 curl -X POST "https://teamorange.mocoapp.com/api/v1/companies" \
-  -H "Authorization: Token token=$MOCO_API_KEY" \
+  -H "Authorization: Token token={{MOCO_API_KEY}}" \
   -H "Content-Type: application/json" \
   -d '{
     "name": "Beispiel GmbH",

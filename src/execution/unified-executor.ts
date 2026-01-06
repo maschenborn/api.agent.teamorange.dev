@@ -206,7 +206,10 @@ export function listExecutions(): ExecutionStatus[] {
  * Build the prompt for the agent
  */
 function buildAgentPrompt(request: ExecutionRequest): string {
-  const systemPrompt = request.systemPrompt || request.agentConfig.systemPrompt;
+  const rawSystemPrompt = request.systemPrompt || request.agentConfig.systemPrompt;
+
+  // Resolve {{VAR}} placeholders with values from process.env
+  const systemPrompt = resolvePromptPlaceholders(rawSystemPrompt);
 
   return `
 ${systemPrompt}
@@ -454,4 +457,20 @@ function resolveEnvValue(value: string): string {
 
   // No placeholder, return as-is
   return value;
+}
+
+/**
+ * Resolve {{VAR}} placeholders in prompt text with values from process.env
+ *
+ * Example: "Token: {{MOCO_API_KEY}}" → "Token: gk_xxx..."
+ */
+function resolvePromptPlaceholders(prompt: string): string {
+  return prompt.replace(/\{\{(\w+)\}\}/g, (match, varName) => {
+    const value = process.env[varName];
+    if (!value) {
+      logger.warn({ varName }, 'Prompt placeholder not found in environment');
+      return match; // Keep original if not found
+    }
+    return value;
+  });
 }
