@@ -51,6 +51,11 @@ if [ -z "$AGENT_PROMPT" ]; then
     exit 1
 fi
 
+# Write prompt to file to avoid shell escaping issues
+# This is critical: prompts can contain |, $, `, etc. which would break eval
+PROMPT_FILE="/tmp/agent_prompt.txt"
+printf '%s' "$AGENT_PROMPT" > "$PROMPT_FILE"
+
 # Model selection (default: opus)
 MODEL="${AGENT_MODEL:-opus}"
 
@@ -58,14 +63,15 @@ MODEL="${AGENT_MODEL:-opus}"
 AUTH_METHOD="oauth"
 
 # Function to run claude with fallback to API key
+# Uses stdin for prompt to avoid shell escaping issues with special characters
 run_claude_with_fallback() {
-    local CLAUDE_ARGS="$1"
+    local EXTRA_ARGS="$1"
     local OUTPUT_FILE="/tmp/claude_output.json"
 
     # First attempt: OAuth credentials
     echo "[AUTH] Attempting OAuth authentication..."
     set +e  # Don't exit on error
-    eval "claude $CLAUDE_ARGS" > "$OUTPUT_FILE" 2>&1
+    cat "$PROMPT_FILE" | claude -p - $EXTRA_ARGS > "$OUTPUT_FILE" 2>&1
     local EXIT_CODE=$?
     set -e
 
@@ -81,7 +87,7 @@ run_claude_with_fallback() {
 
             # Retry with API key (ANTHROPIC_API_KEY env var is already set)
             set +e
-            eval "claude $CLAUDE_ARGS" > "$OUTPUT_FILE" 2>&1
+            cat "$PROMPT_FILE" | claude -p - $EXTRA_ARGS > "$OUTPUT_FILE" 2>&1
             EXIT_CODE=$?
             set -e
         fi
@@ -95,9 +101,10 @@ run_claude_with_fallback() {
 }
 
 # Build Claude Code command based on mode
+# Note: prompt is passed via stdin (cat $PROMPT_FILE | claude -p -)
 if [ "$ANALYSIS_MODE" = "true" ]; then
     # Analysis mode: NO --dangerously-skip-permissions, JSON output
-    run_claude_with_fallback "-p \"$AGENT_PROMPT\" --model \"$MODEL\" --max-turns \"${MAX_TURNS:-1}\" --output-format json"
+    run_claude_with_fallback "--model $MODEL --max-turns ${MAX_TURNS:-1} --output-format json"
 
 elif [ "$USE_RESUME" = "true" ]; then
     # Resume mode: continue existing session
@@ -121,14 +128,14 @@ elif [ "$USE_RESUME" = "true" ]; then
     fi
 
     if [ -n "$CLAUDE_SESSION_ID" ]; then
-        run_claude_with_fallback "--resume \"$CLAUDE_SESSION_ID\" -p \"$AGENT_PROMPT\" --model \"$MODEL\" --dangerously-skip-permissions --max-turns \"${MAX_TURNS:-50}\" --output-format json"
+        run_claude_with_fallback "--resume $CLAUDE_SESSION_ID --model $MODEL --dangerously-skip-permissions --max-turns ${MAX_TURNS:-50} --output-format json"
     else
         # Fallback to new session if no Claude session found
         echo "Warning: Falling back to new session (no Claude session found)"
-        run_claude_with_fallback "-p \"$AGENT_PROMPT\" --model \"$MODEL\" --dangerously-skip-permissions --max-turns \"${MAX_TURNS:-50}\" --output-format json"
+        run_claude_with_fallback "--model $MODEL --dangerously-skip-permissions --max-turns ${MAX_TURNS:-50} --output-format json"
     fi
 
 else
     # New session / Execution mode: full autonomy, JSON output
-    run_claude_with_fallback "-p \"$AGENT_PROMPT\" --model \"$MODEL\" --dangerously-skip-permissions --max-turns \"${MAX_TURNS:-50}\" --output-format json"
+    run_claude_with_fallback "--model $MODEL --dangerously-skip-permissions --max-turns ${MAX_TURNS:-50} --output-format json"
 fi
