@@ -182,3 +182,30 @@ curl https://api.agent.teamorange.dev/health
 
 1. **Token abgelaufen:** Siehe "OAuth-Credentials manuell aktualisieren" oben
 2. **API-Key Fallback testen:** Email senden, Auth-Methode in Antwort pruefen
+
+---
+
+## Learnings / Bekannte Fallstricke
+
+### Shell-Escaping bei Prompts (Jan 2026)
+
+**Problem:** Prompts die Shell-Metazeichen enthalten (`|`, `$`, `` ` ``, etc.) fuehren zu Fehlern wie:
+```
+/home/agent/entrypoint.sh: line 84: teamorange: command not found
+```
+
+**Ursache:** `eval "claude -p \"$PROMPT\""` interpretiert Metazeichen als Shell-Befehle.
+
+**Loesung:** Prompt in Datei schreiben und via stdin uebergeben:
+```bash
+printf '%s' "$AGENT_PROMPT" > /tmp/prompt.txt
+cat /tmp/prompt.txt | claude -p - --model opus
+```
+
+### API-Token Halluzination (Jan 2026)
+
+**Problem:** Claude im Container erfindet random API-Tokens statt die aus dem Prompt zu verwenden.
+
+**Ursache:** Prompt-Injection via `{{PLACEHOLDER}}` wird korrekt ersetzt, aber Claude "korrigiert" die Werte.
+
+**Loesung:** API-Keys als Environment-Variable (`$MOCO_API_KEY`) statt als Plaintext im Prompt uebergeben. Claude liest den Wert dann via `echo $MOCO_API_KEY` oder `printenv`.
