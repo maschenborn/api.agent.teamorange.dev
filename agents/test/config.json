@@ -1,6 +1,6 @@
 {
   "id": "test",
   "name": "Test Agent",
-  "description": "Einfacher Test-Agent der mit Statistiken antwortet",
+  "description": "Einfacher Test-Agent fuer Funktionspruefungen",
   "needsDocker": true
 }
