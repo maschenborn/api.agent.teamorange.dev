@@ -67,8 +67,9 @@ async function processEmailTask(event: ResendEmailReceivedEvent): Promise<void> 
   const emailData = event.data;
   const startTime = Date.now();
 
-  // Check if /dump is requested
-  const isDumpRequested = event.data.subject.toLowerCase().includes('/dump');
+  // Check if /dump or /debug is requested
+  const subjectLower = event.data.subject.toLowerCase();
+  const isDumpRequested = subjectLower.includes('/dump') || subjectLower.includes('/debug');
 
   try {
     // 1. Fetch full email content via Resend Receiving API
