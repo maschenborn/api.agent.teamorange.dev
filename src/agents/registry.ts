@@ -55,6 +55,12 @@ export interface AgentConfig {
    * Can be exact emails or domain patterns like "*@teamorange.de"
    */
   allowedSenders: string[];
+  /**
+   * Model to use for this agent
+   * Options: "opus", "sonnet", "haiku"
+   * Default: uses server config (usually "opus")
+   */
+  model?: string;
 }
 
 // In-memory cache of loaded agents
@@ -111,6 +117,7 @@ function loadAgentFromDir(agentDir: string): AgentConfig | null {
       mcpConfig,
       agentDir,
       allowedSenders: config.allowedSenders || defaultAllowedSenders,
+      model: config.model, // Optional: "opus", "sonnet", "haiku"
     };
 
     logger.debug({ agentId, hasMcp: !!mcpConfig }, 'Loaded agent configuration');

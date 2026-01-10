@@ -3,6 +3,7 @@
   "name": "CRM Agent",
   "description": "Kontakte und Firmen aus Emails extrahieren und in Moco anlegen",
   "needsDocker": true,
+  "model": "haiku",
   "env": {
     "MOCO_API_KEY": "${MOCO_API_KEY}",
     "MOCO_SUBDOMAIN": "teamorange"

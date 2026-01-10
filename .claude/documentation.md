@@ -40,6 +40,7 @@ mkdir agents/meinagent
   "name": "Mein Agent",
   "description": "Beschreibung was der Agent tut",
   "needsDocker": true,
+  "model": "haiku",
   "allowedSenders": [
     "m.aschenborn@teamorange.de",
     "weitere.person@teamorange.de"
@@ -57,6 +58,7 @@ mkdir agents/meinagent
 | `name` | Ja | Anzeigename |
 | `description` | Ja | Kurzbeschreibung |
 | `needsDocker` | Nein | Default: `true` (immer Docker nutzen) |
+| `model` | Nein | Modell: `"opus"`, `"sonnet"`, `"haiku"` (Default: Server-Config, meist `opus`) |
 | `allowedSenders` | Nein | Whitelist der erlaubten Absender (Default: `["m.aschenborn@teamorange.de"]`) |
 | `env` | Nein | Environment-Variablen fuer Container |
 

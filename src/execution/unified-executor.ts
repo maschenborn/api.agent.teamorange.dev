@@ -532,10 +532,13 @@ ${request.subject ? `Betreff: ${request.subject}` : ''}
 ${request.prompt}
 `.trim();
 
+  // Use agent-specific model if configured, otherwise fall back to server default
+  const model = request.agentConfig.model || config.agentDefaultModel || 'sonnet';
+
   return {
     prompt: fullPrompt,
     systemPrompt,
-    model: config.agentDefaultModel || 'sonnet',
+    model,
     maxTurns: request.resources.maxTurns,
     sessionId: request.useResume ? request.sessionId : undefined,
     allowedTools: ['Read', 'Glob', 'Grep', 'Bash', 'Write', 'Edit'],
