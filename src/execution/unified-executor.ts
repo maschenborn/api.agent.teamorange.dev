@@ -171,7 +171,7 @@ export async function executeTask(request: ExecutionRequest): Promise<ExecutionR
         summary: 'Agent exited with error',
         filesModified: [],
         error: output.slice(-2000),
-        rawOutput: output.slice(-5000),
+        rawOutput: output.slice(-10000),
       };
     } else {
       // Use SDK parser for SDK image, legacy parser for sandbox image
@@ -400,7 +400,7 @@ function parseAgentOutput(output: string): ExecutionResult {
           commitHash: commitMatch?.[1],
           modelsUsed: modelsUsed.length > 0 ? modelsUsed : undefined,
           authMethod,
-          rawOutput: output.slice(-5000),
+          rawOutput: output.slice(-10000),
         };
       }
     } catch {
@@ -424,7 +424,7 @@ function parseAgentOutput(output: string): ExecutionResult {
     summary: responseLines.join('\n').slice(-3000) || 'Aufgabe abgeschlossen',
     filesModified: [],
     authMethod,
-    rawOutput: output.slice(-5000),
+    rawOutput: output.slice(-10000),
   };
 }
 
@@ -613,7 +613,7 @@ function parseSdkOutput(output: string): ExecutionResult {
         summary: parsed.output || parsed.error || 'Task completed',
         filesModified: [],
         authMethod: 'api_key', // SDK always uses API key
-        rawOutput: cleanOutput.slice(-5000),
+        rawOutput: cleanOutput.slice(-10000),
       };
     }
   } catch (e) {
@@ -626,6 +626,6 @@ function parseSdkOutput(output: string): ExecutionResult {
     summary: cleanOutput.slice(-3000) || 'Task completed',
     filesModified: [],
     authMethod: 'api_key',
-    rawOutput: cleanOutput.slice(-5000),
+    rawOutput: cleanOutput.slice(-10000),
   };
 }

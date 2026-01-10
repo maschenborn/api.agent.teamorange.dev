@@ -280,7 +280,7 @@ async function processEmailTask(event: ResendEmailReceivedEvent): Promise<void> 
 
           // Timing
           totalDurationMs: Date.now() - startTime,
-          rawOutput: result.rawOutput?.slice(-2000),
+          rawOutput: result.rawOutput?.slice(-10000),
         };
       }
 
