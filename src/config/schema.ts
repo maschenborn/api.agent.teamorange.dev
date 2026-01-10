@@ -29,7 +29,7 @@ export const configSchema = z.object({
   demoprojektRepoUrl: z.string().optional(),
 
   // Agent Container
-  agentDockerImage: z.string().default('claude-agent-sandbox:latest'),
+  agentDockerImage: z.string().default('claude-agent-sdk:latest'),
   agentDefaultModel: z.string().default('opus'), // Claude model: opus, sonnet, haiku
   maxAgentTurns: z.number().min(1).max(200).default(50),
   agentTimeoutMs: z.number().min(30000).max(600000).default(300000), // 5 min default

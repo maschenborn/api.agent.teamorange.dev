@@ -110,10 +110,8 @@ export async function executeTask(request: ExecutionRequest): Promise<ExecutionR
     // Build bind mounts
     const binds = buildBindMounts(sessionPaths);
 
-    // Determine which image to use (SDK is default)
-    const dockerImage = config.agentDockerImage.includes('sandbox')
-      ? config.agentDockerImage  // Legacy mode
-      : 'claude-agent-sdk:latest';  // SDK mode
+    // Use configured image (SDK is default)
+    const dockerImage = config.agentDockerImage;
 
     // Create container with configurable resources
     const container = await docker.createContainer({
