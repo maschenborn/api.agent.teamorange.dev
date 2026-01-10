@@ -17,11 +17,40 @@ import type { ExecutionRequest } from '../../execution/types.js';
 export const debugRouter = Router();
 
 /**
+ * Check if debug access is allowed
+ * - Always allowed in development
+ * - In production: requires valid DEBUG_TOKEN
+ */
+function isDebugAllowed(req: Request): boolean {
+  if (config.nodeEnv !== 'production') {
+    return true;
+  }
+
+  // In production, check for debug token
+  if (!config.debugToken) {
+    return false;
+  }
+
+  const authHeader = req.headers.authorization;
+  if (!authHeader?.startsWith('Bearer ')) {
+    return false;
+  }
+
+  const token = authHeader.substring(7);
+  return token === config.debugToken;
+}
+
+/**
  * GET /debug/agents
  *
  * List all registered agents
  */
-debugRouter.get('/agents', (_req: Request, res: Response) => {
+debugRouter.get('/agents', (req: Request, res: Response) => {
+  if (!isDebugAllowed(req)) {
+    res.status(403).json({ error: 'Debug access denied' });
+    return;
+  }
+
   const agents = getAllAgents();
   res.json({
     count: agents.length,
@@ -40,9 +69,8 @@ debugRouter.get('/agents', (_req: Request, res: Response) => {
  * For internal testing only!
  */
 debugRouter.post('/execute', async (req: Request, res: Response) => {
-  // Only allow in development
-  if (config.nodeEnv === 'production') {
-    res.status(403).json({ error: 'Debug endpoints disabled in production' });
+  if (!isDebugAllowed(req)) {
+    res.status(403).json({ error: 'Debug access denied' });
     return;
   }
 
@@ -120,10 +148,9 @@ debugRouter.post('/execute', async (req: Request, res: Response) => {
  *
  * Show non-sensitive config values
  */
-debugRouter.get('/config', (_req: Request, res: Response) => {
-  // Only allow in development
-  if (config.nodeEnv === 'production') {
-    res.status(403).json({ error: 'Debug endpoints disabled in production' });
+debugRouter.get('/config', (req: Request, res: Response) => {
+  if (!isDebugAllowed(req)) {
+    res.status(403).json({ error: 'Debug access denied' });
     return;
   }
 

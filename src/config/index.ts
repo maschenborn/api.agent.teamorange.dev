@@ -40,6 +40,9 @@ function loadConfig(): Config {
     // Guardrail AI
     anthropicApiKey: process.env.ANTHROPIC_API_KEY,
 
+    // Debug
+    debugToken: process.env.DEBUG_TOKEN,
+
     // Git
     gitEmail: process.env.GIT_EMAIL,
     gitName: process.env.GIT_NAME,

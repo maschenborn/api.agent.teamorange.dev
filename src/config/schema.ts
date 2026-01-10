@@ -45,6 +45,9 @@ export const configSchema = z.object({
   // Guardrail AI (optional - enables AI-powered threat detection)
   anthropicApiKey: z.string().optional(),
 
+  // Debug Token (allows debug endpoints in production when provided)
+  debugToken: z.string().min(32).optional(),
+
   // Git
   gitEmail: z.string().email().default('agent@claude-remote.local'),
   gitName: z.string().default('Claude Remote Agent'),
