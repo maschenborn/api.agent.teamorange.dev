@@ -7,6 +7,7 @@ FROM node:20-slim
 RUN apt-get update && apt-get install -y \
     git \
     curl \
+    jq \
     && rm -rf /var/lib/apt/lists/*
 
 # Claude Code CLI installieren (SDK Runtime)
