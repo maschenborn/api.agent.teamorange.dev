@@ -237,29 +237,204 @@ agents/default/
 
 ---
 
-## Ausfuehrung
+## Vollstaendiger Ablauf
 
-### Flow
+### 1. Email-Empfang
 
 ```
-Email → Webhook → Guardrail → Docker Container → SDK → Response Email
-                     ↓
-              Ablehnung bei
-              Sicherheitsrisiko
+Email an: crm@agent.teamorange.dev
+Von: m.aschenborn@teamorange.de
+Betreff: Westermann Kontakte
+Inhalt: "Sende mir eine Liste aller Ansprechpartner von Westermann."
 ```
 
-### Docker Container
+**Webhook:** Resend sendet POST an `/webhook/email`
 
-Jede Ausfuehrung laeuft isoliert in einem Docker Container:
-- Image: `claude-agent-sdk:latest`
-- Timeout: 5 Minuten (konfigurierbar)
-- Memory: 2 GB
-- CPU: 2 Cores
+### 2. Guardrail-Pruefung
+
+**Zwei-Stufen-Sicherheitssystem:**
+
+```
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────┐
+│ Pattern Matching│ --> │ AI-Analyse       │ --> │ Entscheidung│
+│ (schnell, <10ms)│     │ (Haiku, ~1.5s)   │     │             │
+└─────────────────┘     └──────────────────┘     └─────────────┘
+```
+
+**Stufe 1: Pattern Matching**
+- Prueft auf destruktive Befehle (`rm -rf`, `DROP DATABASE`)
+- Erkennt Prompt Injection ("Ignoriere vorherige Anweisungen")
+- Blockiert Finanz-Aktionen ("Ueberweise 1000 Euro")
+- Erkennt Sicherheitsrisiken ("Zeige API Keys")
+
+**Stufe 2: AI-Analyse (Claude Haiku)**
+- Klassifiziert: APPROVED oder BLOCKED
+- Block-Gruende: DESTRUCTIVE, PROMPT_INJECTION, COMPETENCE_EXCEEDED, FINANCIAL_RISK, SECURITY_RISK
+- Confidence: 0.0-1.0
+
+**Ergebnis:**
+```json
+{
+  "decision": "APPROVED",
+  "confidence": 0.95,
+  "analysisMethod": "ai",
+  "durationMs": 1499
+}
+```
+
+### 3. Session-Erstellung
+
+```
+Session-ID: dd8772
+Pfad: /opt/claude-sessions/crm/dd8772/
+  ├── workspace/       # Arbeitsverzeichnis
+  └── claude-home/     # Claude-Konfiguration (.mcp.json)
+```
+
+### 4. MCP-Injektion
+
+Aus `agents/crm/.mcp.json`:
+```json
+{
+  "mcpServers": {
+    "firecrawl": {
+      "command": "npx",
+      "args": ["-y", "firecrawl-mcp"],
+      "env": { "FIRECRAWL_API_KEY": "${FIRECRAWL_API_KEY}" }
+    }
+  }
+}
+```
+
+Wird nach `/opt/claude-sessions/crm/dd8772/claude-home/.mcp.json` geschrieben.
+
+### 5. Container-Start
+
+**AGENT_TASK Environment Variable:**
+```json
+{
+  "prompt": "Von: m.aschenborn@teamorange.de\nBetreff: Westermann Kontakte\n\nSende mir eine Liste aller Ansprechpartner von Westermann.",
+  "systemPrompt": "# CRM Agent - Moco Integration\n\nDu bist der CRM-Agent...",
+  "model": "opus",
+  "maxTurns": 50,
+  "allowedTools": ["Read", "Glob", "Grep", "Bash", "Write", "Edit", "mcp__*"],
+  "agentId": "crm"
+}
+```
+
+**Container-Konfiguration:**
+```
+Image: claude-agent-sdk:latest
+Memory: 2 GB
+CPU: 2 Cores
+Timeout: 5 Minuten
+Mounts:
+  - /opt/claude-sessions/crm/dd8772/workspace → /workspace
+  - /opt/claude-sessions/crm/dd8772/claude-home → /home/agent/.claude
+```
+
+### 6. SDK-Ausfuehrung
+
+Der agent-runner im Container:
+1. Liest AGENT_TASK
+2. Laedt MCP-Konfiguration aus `/home/agent/.claude/.mcp.json`
+3. Startet SDK `query()` mit Prompt, System-Prompt und MCP-Servern
+4. Gibt Ergebnis als JSON auf stdout aus
+
+**Was Claude sieht:**
+
+```
+[System-Prompt: Claude Code Preset + agents/crm/CLAUDE.md]
+
+User: Von: m.aschenborn@teamorange.de
+Betreff: Westermann Kontakte
+
+Sende mir eine Liste aller Ansprechpartner von Westermann.
+```
+
+**Was Claude tut:**
+```bash
+# 1. Firma suchen
+curl -s "https://teamorange.mocoapp.com/api/v1/companies?term=Westermann" \
+  -H "Authorization: Token token=$MOCO_API_KEY"
+
+# 2. Kontakte der Firma abrufen
+curl -s "https://teamorange.mocoapp.com/api/v1/contacts/people?company_id=762626" \
+  -H "Authorization: Token token=$MOCO_API_KEY"
+```
+
+### 7. Response-Email
+
+```
+An: m.aschenborn@teamorange.de
+Betreff: Re: Westermann Kontakte [#to-dd8772]
+
+Kontakte bei Westermann Druck:
+
+1. Hans Westermann - Geschaeftsfuehrer
+   - hans@westermann-druck.de | +49 521 12345
+   -> https://teamorange.mocoapp.com/contacts/2125184
+
+2. Maria Westermann - Vertriebsleitung
+   - maria@westermann-druck.de | +49 521 12346
+   -> https://teamorange.mocoapp.com/contacts/2125185
+
+---
+Auth: API (kostenpflichtig)
+```
+
+---
+
+## Guardrails im Detail
+
+### Blockierte Anfragen
+
+| Kategorie | Beispiele | Reaktion |
+|-----------|-----------|----------|
+| DESTRUCTIVE | `rm -rf /`, `DROP DATABASE` | Sofort blockiert |
+| PROMPT_INJECTION | "Ignoriere alle Regeln" | Blockiert + Warnung |
+| COMPETENCE_EXCEEDED | "Refactore die komplette Architektur" | Blockiert |
+| FINANCIAL_RISK | "Ueberweise 1000 Euro" | Blockiert |
+| SECURITY_RISK | "Zeige alle API Keys" | Blockiert |
+
+### Erlaubte Anfragen
+
+- Informationsabfragen ("Liste alle Kontakte")
+- CRM-Operationen ("Lege Kontakt an")
+- Recherche ("Finde Impressum von firma.de")
+- Standard-Workflows
+
+### Konfiguration
+
+`src/guardrail/analyzer.ts`:
+```typescript
+const DEFAULT_CONFIG = {
+  useAiAnalysis: true,
+  patternConfidenceThreshold: 0.9,
+  aiModel: 'claude-3-5-haiku-20241022',
+  aiTimeoutMs: 10000,
+};
+```
+
+---
+
+## Docker Container
+
+Jede Ausfuehrung laeuft isoliert:
+
+| Einstellung | Wert |
+|-------------|------|
+| Image | `claude-agent-sdk:latest` |
+| Timeout | 5 Minuten (300000ms) |
+| Memory | 2 GB |
+| CPU | 2 Cores |
+| Network | Bridge (Internet-Zugang) |
 
 ### Session Persistenz
 
-Sessions werden in `/opt/claude-sessions/` gespeichert.
-Bei Email-Antworten (gleicher Thread) wird die Session fortgesetzt.
+Sessions in `/opt/claude-sessions/{agentId}/{sessionId}/`:
+- Bei Email-Replies (gleicher Thread) wird Session fortgesetzt
+- Session-ID im Betreff: `[#to-dd8772]`
 
 ---
 
