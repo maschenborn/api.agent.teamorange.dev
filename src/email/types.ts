@@ -149,5 +149,12 @@ export interface DebugDump {
   turns?: number;
   costUsd?: number;
 
+  // Tool calls (for debugging)
+  toolCalls?: Array<{
+    tool: string;
+    input: string;
+    output?: string;
+  }>;
+
   rawOutput?: string; // Last 10000 chars
 }

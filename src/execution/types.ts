@@ -75,6 +75,13 @@ export interface ExecutionRequest {
 // Execution Result
 // ============================================
 
+/** Tool call tracked from SDK execution */
+export interface ToolCall {
+  tool: string;
+  input: string;
+  output?: string;
+}
+
 export interface ExecutionResult {
   success: boolean;
   summary: string;
@@ -93,6 +100,8 @@ export interface ExecutionResult {
   inputTokens?: number;
   /** Output tokens used */
   outputTokens?: number;
+  /** Bash tool calls made during execution */
+  toolCalls?: ToolCall[];
 }
 
 // ============================================

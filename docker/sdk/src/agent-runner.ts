@@ -32,6 +32,13 @@ interface TaskConfig {
   mcpConfigPath?: string; // Pfad zur .mcp.json
 }
 
+// Tool Call Tracking
+interface ToolCall {
+  tool: string;
+  input: string;
+  output?: string;
+}
+
 // Ergebnis-Struktur
 interface TaskResult {
   success: boolean;
@@ -41,6 +48,7 @@ interface TaskResult {
   cost?: number;
   turns?: number;
   error?: string;
+  toolCalls?: ToolCall[]; // Bash commands executed
 }
 
 /**
@@ -172,6 +180,10 @@ async function runAgent(): Promise<void> {
     output: ""
   };
 
+  // Track tool calls for debugging
+  const toolCalls: ToolCall[] = [];
+  const pendingToolCalls = new Map<string, ToolCall>();
+
   // MCP-Konfiguration laden
   const mcpConfig = loadMcpConfig(task.mcpConfigPath);
   const mcpServers: Record<string, McpServerConfig> = {};
@@ -229,7 +241,7 @@ async function runAgent(): Promise<void> {
         }
       }
 
-      // Assistant-Nachrichten loggen (für Debugging)
+      // Assistant-Nachrichten: Tool-Calls erfassen
       if (message.type === "assistant") {
         for (const block of message.message.content) {
           if ("text" in block) {
@@ -238,8 +250,52 @@ async function runAgent(): Promise<void> {
               result.output = block.text;
             }
           }
+          // Tool use blocks - capture Bash commands
+          if (block.type === "tool_use") {
+            const toolName = block.name;
+            const toolInput = typeof block.input === "object"
+              ? JSON.stringify(block.input)
+              : String(block.input);
+
+            // Only track Bash commands (where the curl calls happen)
+            if (toolName === "Bash") {
+              const tc: ToolCall = {
+                tool: toolName,
+                input: toolInput
+              };
+              pendingToolCalls.set(block.id, tc);
+            }
+          }
         }
       }
+
+      // User messages contain tool results
+      if (message.type === "user") {
+        for (const block of message.message.content) {
+          if (block.type === "tool_result" && typeof block.tool_use_id === "string") {
+            const pending = pendingToolCalls.get(block.tool_use_id);
+            if (pending) {
+              // Extract output (first 500 chars to avoid huge logs)
+              let output = "";
+              if (Array.isArray(block.content)) {
+                for (const c of block.content) {
+                  if ("text" in c) {
+                    output += c.text;
+                  }
+                }
+              }
+              pending.output = output.slice(0, 500);
+              toolCalls.push(pending);
+              pendingToolCalls.delete(block.tool_use_id);
+            }
+          }
+        }
+      }
+    }
+
+    // Add tool calls to result for debugging
+    if (toolCalls.length > 0) {
+      result.toolCalls = toolCalls;
     }
 
     // Ergebnis auf stdout

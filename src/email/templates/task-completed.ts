@@ -216,6 +216,19 @@ function renderDebugDump(dump: DebugDump): string {
         </table>
       </div>
 
+      ${dump.toolCalls && dump.toolCalls.length > 0 ? `
+      <div style="background: #fff3e0; padding: 15px; border-radius: 8px; margin-bottom: 20px; border-left: 4px solid #ff9800;">
+        <h3 style="margin-top: 0; color: #333;">Bash Tool Calls (${dump.toolCalls.length})</h3>
+        ${dump.toolCalls.map((tc, i) => `
+          <div style="margin-bottom: 15px; padding: 10px; background: #fff; border-radius: 4px;">
+            <strong style="color: #e65100;">#${i + 1} ${escapeHtml(tc.tool)}</strong>
+            <pre style="background: #263238; color: #aed581; padding: 8px; border-radius: 4px; margin: 8px 0 0 0; overflow-x: auto; white-space: pre-wrap; font-size: 11px;">${escapeHtml(tc.input)}</pre>
+            ${tc.output ? `<pre style="background: #37474f; color: #b0bec5; padding: 8px; border-radius: 4px; margin: 4px 0 0 0; overflow-x: auto; white-space: pre-wrap; font-size: 10px; max-height: 150px; overflow-y: auto;">${escapeHtml(tc.output)}</pre>` : ''}
+          </div>
+        `).join('')}
+      </div>
+      ` : ''}
+
       ${dump.rawOutput ? `
       <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
         <h3 style="margin-top: 0; color: #333;">Raw Output (letzte 10000 Zeichen)</h3>

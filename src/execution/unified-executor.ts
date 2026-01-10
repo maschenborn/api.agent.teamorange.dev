@@ -29,6 +29,13 @@ interface SdkTaskConfig {
   agentId?: string;
 }
 
+// Tool Call from SDK
+interface SdkToolCall {
+  tool: string;
+  input: string;
+  output?: string;
+}
+
 // SDK Result (returned from container on stdout)
 interface SdkTaskResult {
   success: boolean;
@@ -38,6 +45,7 @@ interface SdkTaskResult {
   cost?: number;
   turns?: number;
   error?: string;
+  toolCalls?: SdkToolCall[];
 }
 
 const docker = new Docker();
@@ -602,22 +610,25 @@ function parseSdkOutput(output: string): ExecutionResult {
 
   // Try to parse SDK JSON result
   try {
-    // Find last JSON object in output (the result)
-    // Match the final result JSON that agent-runner.ts outputs
-    const jsonMatches = cleanOutput.match(/\{"success":(true|false),"sessionId":"[^"]*","output":"[^"]*"[^}]*\}/g);
-    if (jsonMatches && jsonMatches.length > 0) {
-      const lastJson = jsonMatches[jsonMatches.length - 1];
-      const parsed: SdkTaskResult = JSON.parse(lastJson);
+    // Find the last line that looks like a JSON result
+    // The agent-runner outputs JSON on a single line at the end
+    const lines = cleanOutput.split('\n');
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i].trim();
+      if (line.startsWith('{"success":')) {
+        const parsed: SdkTaskResult = JSON.parse(line);
 
-      return {
-        success: parsed.success,
-        summary: parsed.output || parsed.error || 'Task completed',
-        filesModified: [],
-        authMethod: 'api_key', // SDK always uses API key
-        rawOutput: cleanOutput.slice(-10000),
-        costUsd: parsed.cost,
-        turns: parsed.turns,
-      };
+        return {
+          success: parsed.success,
+          summary: parsed.output || parsed.error || 'Task completed',
+          filesModified: [],
+          authMethod: 'api_key', // SDK always uses API key
+          rawOutput: cleanOutput.slice(-10000),
+          costUsd: parsed.cost,
+          turns: parsed.turns,
+          toolCalls: parsed.toolCalls,
+        };
+      }
     }
   } catch (e) {
     logger.warn({ error: e }, 'Failed to parse SDK JSON output');

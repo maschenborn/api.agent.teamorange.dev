@@ -283,6 +283,9 @@ async function processEmailTask(event: ResendEmailReceivedEvent): Promise<void> 
           turns: result.turns,
           costUsd: result.costUsd,
 
+          // Tool calls (for debugging curl commands)
+          toolCalls: result.toolCalls,
+
           rawOutput: result.rawOutput?.slice(-10000),
         };
       }
