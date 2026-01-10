@@ -1,7 +1,7 @@
-import type { TaskCompletedParams } from '../types.js';
+import type { TaskCompletedParams, DebugDump } from '../types.js';
 
 export function taskCompletedTemplate(params: TaskCompletedParams): string {
-  const { result } = params;
+  const { result, debugDump } = params;
 
   const filesSection = result.filesModified.length > 0
     ? `
@@ -25,6 +25,9 @@ export function taskCompletedTemplate(params: TaskCompletedParams): string {
   const authSection = result.authMethod
     ? `<p style="font-size: 11px; color: #888;"><strong>Auth:</strong> ${authLabel}</p>`
     : '';
+
+  // Debug dump section (only when /dump was in subject)
+  const debugDumpSection = debugDump ? renderDebugDump(debugDump) : '';
 
   return `
 <!DOCTYPE html>
@@ -67,6 +70,7 @@ export function taskCompletedTemplate(params: TaskCompletedParams): string {
         <em>Diese E-Mail wurde automatisch generiert.</em>
       </p>
     </div>
+    ${debugDumpSection}
   </div>
 </body>
 </html>
@@ -111,4 +115,111 @@ function markdownToHtml(text: string): string {
     .replace(/(<li>.*<\/li>\n?)+/g, '<ul>$&</ul>')
     // Newlines to <br>
     .replace(/\n/g, '<br>');
+}
+
+/**
+ * Render debug dump section for /dump command
+ */
+function renderDebugDump(dump: DebugDump): string {
+  const agentsTable = dump.availableAgents
+    .map((a) => `<tr><td><code>${escapeHtml(a.id)}</code></td><td>${escapeHtml(a.name)}</td><td><code>${escapeHtml(a.email)}</code></td></tr>`)
+    .join('\n');
+
+  const mcpList = dump.mcpServers.length > 0
+    ? dump.mcpServers.map((s) => `<li><code>${escapeHtml(s)}</code></li>`).join('\n')
+    : '<li><em>Keine MCP-Server konfiguriert</em></li>';
+
+  const toolsList = dump.allowedTools.map((t) => `<code>${escapeHtml(t)}</code>`).join(', ');
+
+  return `
+    <div style="margin-top: 40px; border-top: 2px solid #ccc; padding-top: 20px;">
+      <h2 style="color: #666; margin-bottom: 20px;">Debug Dump (/dump)</h2>
+
+      <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+        <h3 style="margin-top: 0; color: #333;">Request Info</h3>
+        <table style="width: 100%; border-collapse: collapse;">
+          <tr><td style="padding: 4px 0; color: #666; width: 140px;">Email-ID:</td><td><code>${escapeHtml(dump.emailId)}</code></td></tr>
+          <tr><td style="padding: 4px 0; color: #666;">Von:</td><td><code>${escapeHtml(dump.sender)}</code></td></tr>
+          <tr><td style="padding: 4px 0; color: #666;">An:</td><td><code>${escapeHtml(dump.recipient)}</code></td></tr>
+          <tr><td style="padding: 4px 0; color: #666;">Betreff:</td><td>${escapeHtml(dump.subject)}</td></tr>
+          <tr><td style="padding: 4px 0; color: #666;">Empfangen:</td><td>${escapeHtml(dump.receivedAt)}</td></tr>
+        </table>
+      </div>
+
+      <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+        <h3 style="margin-top: 0; color: #333;">Agent</h3>
+        <table style="width: 100%; border-collapse: collapse;">
+          <tr><td style="padding: 4px 0; color: #666; width: 140px;">ID:</td><td><code>${escapeHtml(dump.agentId)}</code></td></tr>
+          <tr><td style="padding: 4px 0; color: #666;">Name:</td><td>${escapeHtml(dump.agentName)}</td></tr>
+          <tr><td style="padding: 4px 0; color: #666;">Beschreibung:</td><td>${escapeHtml(dump.agentDescription)}</td></tr>
+        </table>
+        <h4 style="margin-bottom: 8px;">System-Prompt (erste 500 Zeichen):</h4>
+        <pre style="background: #e8e8e8; padding: 10px; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; font-size: 11px;">${escapeHtml(dump.systemPromptPreview)}</pre>
+      </div>
+
+      <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+        <h3 style="margin-top: 0; color: #333;">Session</h3>
+        <table style="width: 100%; border-collapse: collapse;">
+          <tr><td style="padding: 4px 0; color: #666; width: 140px;">Session-ID:</td><td><code>${escapeHtml(dump.sessionId)}</code></td></tr>
+          <tr><td style="padding: 4px 0; color: #666;">Neue Session:</td><td>${dump.isNewSession ? 'Ja' : 'Nein (fortgesetzt)'}</td></tr>
+        </table>
+      </div>
+
+      <div style="background: ${dump.guardrail.decision === 'APPROVED' ? '#e8f5e9' : '#ffebee'}; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+        <h3 style="margin-top: 0; color: #333;">Guardrail-Analyse</h3>
+        <table style="width: 100%; border-collapse: collapse;">
+          <tr><td style="padding: 4px 0; color: #666; width: 140px;">Entscheidung:</td><td><strong style="color: ${dump.guardrail.decision === 'APPROVED' ? '#2e7d32' : '#c62828'};">${escapeHtml(dump.guardrail.decision)}</strong></td></tr>
+          ${dump.guardrail.reason ? `<tr><td style="padding: 4px 0; color: #666;">Grund:</td><td>${escapeHtml(dump.guardrail.reason)}</td></tr>` : ''}
+          <tr><td style="padding: 4px 0; color: #666;">Erklaerung:</td><td>${escapeHtml(dump.guardrail.explanation)}</td></tr>
+          <tr><td style="padding: 4px 0; color: #666;">Konfidenz:</td><td>${(dump.guardrail.confidence * 100).toFixed(0)}%</td></tr>
+          <tr><td style="padding: 4px 0; color: #666;">Methode:</td><td><code>${escapeHtml(dump.guardrail.method)}</code></td></tr>
+          <tr><td style="padding: 4px 0; color: #666;">Dauer:</td><td>${dump.guardrail.durationMs}ms</td></tr>
+        </table>
+      </div>
+
+      <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+        <h3 style="margin-top: 0; color: #333;">Execution</h3>
+        <table style="width: 100%; border-collapse: collapse;">
+          <tr><td style="padding: 4px 0; color: #666; width: 140px;">Execution-ID:</td><td><code>${escapeHtml(dump.executionId)}</code></td></tr>
+          <tr><td style="padding: 4px 0; color: #666;">Modell:</td><td><code>${escapeHtml(dump.model)}</code></td></tr>
+          <tr><td style="padding: 4px 0; color: #666;">Max Turns:</td><td>${dump.maxTurns}</td></tr>
+          <tr><td style="padding: 4px 0; color: #666;">Gesamtdauer:</td><td>${dump.totalDurationMs}ms (${(dump.totalDurationMs / 1000).toFixed(1)}s)</td></tr>
+        </table>
+        <h4 style="margin-bottom: 8px;">Erlaubte Tools:</h4>
+        <p style="margin: 0;">${toolsList}</p>
+        <h4 style="margin-bottom: 8px;">Prompt:</h4>
+        <pre style="background: #e8e8e8; padding: 10px; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; font-size: 11px;">${escapeHtml(dump.prompt)}</pre>
+      </div>
+
+      <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+        <h3 style="margin-top: 0; color: #333;">MCP-Server</h3>
+        <ul style="margin: 0; padding-left: 20px;">
+          ${mcpList}
+        </ul>
+      </div>
+
+      <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+        <h3 style="margin-top: 0; color: #333;">Verfuegbare Agents</h3>
+        <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+          <thead>
+            <tr style="background: #e0e0e0;">
+              <th style="padding: 6px; text-align: left;">ID</th>
+              <th style="padding: 6px; text-align: left;">Name</th>
+              <th style="padding: 6px; text-align: left;">Email</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${agentsTable}
+          </tbody>
+        </table>
+      </div>
+
+      ${dump.rawOutput ? `
+      <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+        <h3 style="margin-top: 0; color: #333;">Raw Output (letzte 2000 Zeichen)</h3>
+        <pre style="background: #1e1e1e; color: #d4d4d4; padding: 10px; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; font-size: 10px; max-height: 400px; overflow-y: auto;">${escapeHtml(dump.rawOutput)}</pre>
+      </div>
+      ` : ''}
+    </div>
+  `;
 }

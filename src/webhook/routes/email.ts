@@ -1,13 +1,13 @@
 import { Router, type Request, type Response } from 'express';
 import { randomBytes } from 'crypto';
-import type { ResendEmailReceivedEvent, RejectionReason } from '../../email/types.js';
+import type { ResendEmailReceivedEvent, RejectionReason, DebugDump } from '../../email/types.js';
 import { emailClient } from '../../email/client.js';
 import { parseTaskFromEmail } from '../../agent/task-parser.js';
 import { executeTask } from '../../execution/unified-executor.js';
 import { analyzeRequest, type GuardrailResult, type BlockReason } from '../../guardrail/index.js';
 import { logger } from '../../utils/logger.js';
 import { getOrCreateSession, hasClaudeSession } from '../../session/index.js';
-import { getAgentForEmail } from '../../agents/registry.js';
+import { getAgentForEmail, getAllAgents } from '../../agents/registry.js';
 import { config } from '../../config/index.js';
 import type { ExecutionRequest } from '../../execution/types.js';
 
@@ -65,6 +65,10 @@ emailWebhookRouter.post('/', async (req: Request, res: Response) => {
 async function processEmailTask(event: ResendEmailReceivedEvent): Promise<void> {
   const emailId = event.data.email_id;
   const emailData = event.data;
+  const startTime = Date.now();
+
+  // Check if /dump is requested
+  const isDumpRequested = event.data.subject.toLowerCase().includes('/dump');
 
   try {
     // 1. Fetch full email content via Resend Receiving API
@@ -207,6 +211,66 @@ async function processEmailTask(event: ResendEmailReceivedEvent): Promise<void> 
     // 7. Send results
     if (result.success) {
       logger.info({ emailId, taskId: task.id, sessionId: session.id }, 'Task completed successfully');
+
+      // Build debug dump if /dump was requested
+      let debugDump: DebugDump | undefined;
+      if (isDumpRequested) {
+        const allAgents = getAllAgents();
+        const mcpServers = agentConfig.mcpConfig?.mcpServers
+          ? Object.keys(agentConfig.mcpConfig.mcpServers)
+          : [];
+
+        debugDump = {
+          // Request info
+          emailId,
+          sender: fullEmail.from,
+          recipient: task.recipient,
+          subject: fullEmail.subject,
+          receivedAt: new Date(startTime).toISOString(),
+
+          // Agent config
+          agentId: agentConfig.id,
+          agentName: agentConfig.name,
+          agentDescription: agentConfig.description,
+          systemPromptPreview: agentConfig.systemPrompt.slice(0, 500),
+
+          // Session
+          sessionId: session.id,
+          isNewSession: isNew,
+
+          // Guardrail
+          guardrail: {
+            decision: guardrailResult.decision,
+            reason: guardrailResult.reason,
+            explanation: guardrailResult.explanation,
+            confidence: guardrailResult.confidence,
+            method: guardrailResult.analysisMethod,
+            durationMs: guardrailResult.durationMs,
+          },
+
+          // Execution
+          prompt: task.description,
+          executionId: executionRequest.executionId,
+          model: config.agentDefaultModel,
+          maxTurns: config.maxAgentTurns,
+          allowedTools: ['Read', 'Glob', 'Grep', 'Bash', 'Write', 'Edit', 'mcp__*'],
+
+          // MCP
+          mcpServers,
+
+          // Available agents
+          availableAgents: allAgents.map((a) => ({
+            id: a.id,
+            name: a.name,
+            email: `${a.id}@agent.teamorange.dev`,
+          })),
+
+          // Timing
+          totalDurationMs: Date.now() - startTime,
+          rawOutput: result.rawOutput?.slice(-2000),
+        };
+      }
+
       await emailClient.sendTaskCompleted({
         to: fullEmail.from,
         taskSummary: task.summary,
@@ -221,6 +285,7 @@ async function processEmailTask(event: ResendEmailReceivedEvent): Promise<void> 
         originalSubject: fullEmail.subject,
         originalMessageId: fullEmail.message_id,
         sessionId: session.id,
+        debugDump,
       });
     } else {
       logger.warn({ emailId, taskId: task.id, sessionId: session.id, error: result.error }, 'Task failed');

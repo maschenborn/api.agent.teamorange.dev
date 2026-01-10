@@ -63,6 +63,7 @@ export interface TaskCompletedParams {
   originalSubject: string;
   originalMessageId: string;
   sessionId?: string;
+  debugDump?: DebugDump; // Included when subject contains /dump
 }
 
 export interface TaskFailedParams {
@@ -92,4 +93,58 @@ export interface AgentResult {
   deployUrl?: string;
   modelsUsed?: string[]; // e.g. ['Haiku 4.5', 'Opus 4.5']
   authMethod?: 'oauth' | 'api_key'; // oauth = Subscription, api_key = Pay-as-you-go
+}
+
+/**
+ * Debug dump information for /dump command
+ * Included in response email when subject contains "/dump"
+ */
+export interface DebugDump {
+  // Request info
+  emailId: string;
+  sender: string;
+  recipient: string;
+  subject: string;
+  receivedAt: string;
+
+  // Agent config
+  agentId: string;
+  agentName: string;
+  agentDescription: string;
+  systemPromptPreview: string; // First 500 chars
+
+  // Session
+  sessionId: string;
+  isNewSession: boolean;
+
+  // Guardrail
+  guardrail: {
+    decision: string;
+    reason?: string;
+    explanation: string;
+    confidence: number;
+    method: string;
+    durationMs: number;
+  };
+
+  // Execution
+  prompt: string;
+  executionId: string;
+  model: string;
+  maxTurns: number;
+  allowedTools: string[];
+
+  // MCP
+  mcpServers: string[];
+
+  // Available agents
+  availableAgents: Array<{
+    id: string;
+    name: string;
+    email: string;
+  }>;
+
+  // Timing
+  totalDurationMs: number;
+  rawOutput?: string; // Last 2000 chars
 }
