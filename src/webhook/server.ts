@@ -5,6 +5,7 @@ import { verifyResendSignature } from './middleware/verify-signature.js';
 import { executeRouter } from '../api/routes/execute.js';
 import { statusRouter } from '../api/routes/status.js';
 import { sessionsRouter } from '../api/routes/sessions.js';
+import { debugRouter } from '../api/routes/debug.js';
 import { logger } from '../utils/logger.js';
 import { config } from '../config/index.js';
 
@@ -27,6 +28,9 @@ export function createServer(): Express {
   app.use('/api/execute', executeRouter);
   app.use('/api/status', statusRouter);
   app.use('/api/sessions', sessionsRouter);
+
+  // Debug Routes (only in development)
+  app.use('/debug', debugRouter);
 
   // Webhook Routes
   app.use('/webhook/email', verifyResendSignature, emailWebhookRouter);

@@ -2,7 +2,11 @@
  * Unified Executor
  *
  * Central execution logic for all channels (API, Email, Teams).
- * Handles Docker container spawning, MCP injection, and result parsing.
+ * Uses Claude Agent SDK in Docker containers for task execution.
+ *
+ * Architecture:
+ * - SDK Image: docker/sdk/ - TypeScript-based with @anthropic-ai/claude-agent-sdk
+ * - Legacy Image: docker/Dockerfile - Shell-based (deprecated)
  */
 
 import Docker from 'dockerode';
@@ -13,6 +17,28 @@ import { getSessionPaths, type SessionPaths } from '../session/index.js';
 import { injectMcpConfig, injectMcpConfigDirect, type McpJsonFormat } from './mcp-injector.js';
 import type { McpConfig } from '../agents/registry.js';
 import type { ExecutionRequest, ExecutionResult, ExecutionStatus } from './types.js';
+
+// SDK Task Config (passed to container via AGENT_TASK env var)
+interface SdkTaskConfig {
+  prompt: string;
+  systemPrompt?: string;
+  model?: string;
+  maxTurns?: number;
+  sessionId?: string;
+  allowedTools?: string[];
+  agentId?: string;
+}
+
+// SDK Result (returned from container on stdout)
+interface SdkTaskResult {
+  success: boolean;
+  sessionId: string;
+  output: string;
+  structuredOutput?: unknown;
+  cost?: number;
+  turns?: number;
+  error?: string;
+}
 
 const docker = new Docker();
 
@@ -74,19 +100,24 @@ export async function executeTask(request: ExecutionRequest): Promise<ExecutionR
     }
   }
 
-  // Build the prompt
-  const agentPrompt = buildAgentPrompt(request);
+  // Build SDK task config
+  const taskConfig = buildSdkTaskConfig(request);
 
   try {
-    // Build environment variables
-    const envVars = buildEnvVars(request, agentPrompt);
+    // Build environment variables for SDK container
+    const envVars = buildSdkEnvVars(request, taskConfig);
 
     // Build bind mounts
     const binds = buildBindMounts(sessionPaths);
 
+    // Determine which image to use (SDK is default)
+    const dockerImage = config.agentDockerImage.includes('sandbox')
+      ? config.agentDockerImage  // Legacy mode
+      : 'claude-agent-sdk:latest';  // SDK mode
+
     // Create container with configurable resources
     const container = await docker.createContainer({
-      Image: config.agentDockerImage,
+      Image: dockerImage,
       name: containerName,
       Env: envVars,
       HostConfig: {
@@ -134,7 +165,7 @@ export async function executeTask(request: ExecutionRequest): Promise<ExecutionR
       logger.warn({ removeError, containerName }, 'Failed to remove container');
     }
 
-    // Parse result
+    // Parse result based on image type
     let result: ExecutionResult;
     if (waitResult.StatusCode !== 0) {
       result = {
@@ -145,7 +176,9 @@ export async function executeTask(request: ExecutionRequest): Promise<ExecutionR
         rawOutput: output.slice(-5000),
       };
     } else {
-      result = parseAgentOutput(output);
+      // Use SDK parser for SDK image, legacy parser for sandbox image
+      const isLegacyImage = dockerImage.includes('sandbox');
+      result = isLegacyImage ? parseAgentOutput(output) : parseSdkOutput(output);
     }
 
     // Update status
@@ -480,4 +513,118 @@ function resolvePromptPlaceholders(prompt: string): string {
 
   logger.info({ replacementCount }, 'Prompt placeholders resolved');
   return resolved;
+}
+
+// ============================================
+// SDK-specific functions
+// ============================================
+
+/**
+ * Build SDK task configuration
+ */
+function buildSdkTaskConfig(request: ExecutionRequest): SdkTaskConfig {
+  const rawSystemPrompt = request.systemPrompt || request.agentConfig.systemPrompt;
+  const systemPrompt = resolvePromptPlaceholders(rawSystemPrompt);
+
+  // Build full prompt with context
+  const fullPrompt = `
+${request.sender ? `Von: ${request.sender}` : ''}
+${request.subject ? `Betreff: ${request.subject}` : ''}
+
+${request.prompt}
+`.trim();
+
+  return {
+    prompt: fullPrompt,
+    systemPrompt,
+    model: config.agentDefaultModel || 'sonnet',
+    maxTurns: request.resources.maxTurns,
+    sessionId: request.useResume ? request.sessionId : undefined,
+    allowedTools: ['Read', 'Glob', 'Grep', 'Bash', 'Write', 'Edit'],
+    agentId: request.agentConfig.id,
+  };
+}
+
+/**
+ * Build environment variables for SDK container
+ */
+function buildSdkEnvVars(request: ExecutionRequest, taskConfig: SdkTaskConfig): string[] {
+  const envVars: string[] = [
+    // Task config as JSON
+    `AGENT_TASK=${JSON.stringify(taskConfig)}`,
+
+    // API Key (required for SDK)
+    `ANTHROPIC_API_KEY=${config.anthropicApiKey || ''}`,
+
+    // Metadata
+    `AGENT_ID=${request.agentConfig.id}`,
+    `EXECUTION_ID=${request.executionId}`,
+  ];
+
+  // Git credentials
+  if (config.githubToken) {
+    envVars.push(`GITHUB_TOKEN=${config.githubToken}`);
+  }
+  if (config.gitEmail) {
+    envVars.push(`GIT_EMAIL=${config.gitEmail}`);
+  }
+  if (config.gitName) {
+    envVars.push(`GIT_NAME=${config.gitName}`);
+  }
+
+  // Agent-specific env vars
+  if (request.agentConfig.env) {
+    for (const [key, value] of Object.entries(request.agentConfig.env)) {
+      const resolvedValue = resolveEnvValue(value);
+      if (resolvedValue) {
+        envVars.push(`${key}=${resolvedValue}`);
+      }
+    }
+  }
+
+  // MCP-related API keys
+  if (config.mocoApiKey) {
+    envVars.push(`MOCO_API_KEY=${config.mocoApiKey}`);
+  }
+  if (config.firecrawlApiKey) {
+    envVars.push(`FIRECRAWL_API_KEY=${config.firecrawlApiKey}`);
+  }
+
+  return envVars;
+}
+
+/**
+ * Parse SDK result from container output
+ */
+function parseSdkOutput(output: string): ExecutionResult {
+  const cleanOutput = stripDockerStreamHeaders(output);
+
+  // Try to parse SDK JSON result
+  try {
+    // Find last JSON object in output (the result)
+    const jsonMatches = cleanOutput.match(/\{[^{}]*"success"[^{}]*\}/g);
+    if (jsonMatches && jsonMatches.length > 0) {
+      const lastJson = jsonMatches[jsonMatches.length - 1];
+      const parsed: SdkTaskResult = JSON.parse(lastJson);
+
+      return {
+        success: parsed.success,
+        summary: parsed.output || parsed.error || 'Task completed',
+        filesModified: [],
+        authMethod: 'api_key', // SDK always uses API key
+        rawOutput: cleanOutput.slice(-5000),
+      };
+    }
+  } catch (e) {
+    logger.warn({ error: e }, 'Failed to parse SDK JSON output');
+  }
+
+  // Fallback: treat as plain text
+  return {
+    success: true,
+    summary: cleanOutput.slice(-3000) || 'Task completed',
+    filesModified: [],
+    authMethod: 'api_key',
+    rawOutput: cleanOutput.slice(-5000),
+  };
 }
