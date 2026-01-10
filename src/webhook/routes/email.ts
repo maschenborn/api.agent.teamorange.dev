@@ -7,7 +7,7 @@ import { executeTask } from '../../execution/unified-executor.js';
 import { analyzeRequest, type GuardrailResult, type BlockReason } from '../../guardrail/index.js';
 import { logger } from '../../utils/logger.js';
 import { getOrCreateSession, hasClaudeSession } from '../../session/index.js';
-import { getAgentForEmail, getAllAgents } from '../../agents/registry.js';
+import { getAgentForEmail, getAllAgents, isSenderAllowed } from '../../agents/registry.js';
 import { config } from '../../config/index.js';
 import type { ExecutionRequest } from '../../execution/types.js';
 
@@ -46,10 +46,22 @@ emailWebhookRouter.post('/', async (req: Request, res: Response) => {
     return;
   }
 
-  // SENDER WHITELIST: Only process emails from @teamorange.de
-  if (!fromAddress.endsWith('@teamorange.de')) {
-    logger.warn({ emailId, from: fromAddress }, 'Ignoring email from non-whitelisted domain');
-    res.status(200).json({ status: 'ignored', reason: 'sender not whitelisted - only @teamorange.de allowed' });
+  // Get the recipient (first "to" address)
+  const recipient = event.data.to?.[0]?.toLowerCase() || '';
+
+  // Get agent config for this recipient
+  const agentConfig = getAgentForEmail(recipient);
+
+  // PER-AGENT SENDER WHITELIST: Check if sender is allowed for this agent
+  if (!isSenderAllowed(fromAddress, agentConfig)) {
+    logger.warn(
+      { emailId, from: fromAddress, agentId: agentConfig.id, allowedSenders: agentConfig.allowedSenders },
+      'Ignoring email from non-whitelisted sender'
+    );
+    res.status(200).json({
+      status: 'ignored',
+      reason: `sender not whitelisted for agent '${agentConfig.id}'`,
+    });
     return;
   }
 

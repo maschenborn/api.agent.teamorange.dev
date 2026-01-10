@@ -40,6 +40,10 @@ mkdir agents/meinagent
   "name": "Mein Agent",
   "description": "Beschreibung was der Agent tut",
   "needsDocker": true,
+  "allowedSenders": [
+    "m.aschenborn@teamorange.de",
+    "weitere.person@teamorange.de"
+  ],
   "env": {
     "API_KEY": "${API_KEY}",
     "CUSTOM_VAR": "statischer-wert"
@@ -53,7 +57,29 @@ mkdir agents/meinagent
 | `name` | Ja | Anzeigename |
 | `description` | Ja | Kurzbeschreibung |
 | `needsDocker` | Nein | Default: `true` (immer Docker nutzen) |
+| `allowedSenders` | Nein | Whitelist der erlaubten Absender (Default: `["m.aschenborn@teamorange.de"]`) |
 | `env` | Nein | Environment-Variablen fuer Container |
+
+**Sender-Whitelist (`allowedSenders`):**
+- Jeder Agent hat eine eigene Whitelist erlaubter Absender
+- Default (wenn nicht angegeben): `["m.aschenborn@teamorange.de"]`
+- Exakte Email-Adressen: `"max@firma.de"`
+- Domain-Wildcards: `"*@teamorange.de"` (alle von dieser Domain)
+
+**Beispiele:**
+```json
+// Nur ein Absender (Default)
+"allowedSenders": ["m.aschenborn@teamorange.de"]
+
+// Mehrere Absender
+"allowedSenders": [
+  "m.aschenborn@teamorange.de",
+  "kollege@teamorange.de"
+]
+
+// Ganze Domain erlauben
+"allowedSenders": ["*@teamorange.de"]
+```
 
 **Environment-Variablen:**
 - `${VAR}` - Wird zur Laufzeit aus Server-Environment ersetzt
@@ -250,7 +276,32 @@ Inhalt: "Sende mir eine Liste aller Ansprechpartner von Westermann."
 
 **Webhook:** Resend sendet POST an `/webhook/email`
 
-### 2. Guardrail-Pruefung
+### 2. Sender-Whitelist-Pruefung
+
+**Per-Agent Zugangskontrolle:**
+
+```
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────┐
+│ Loop Protection │ --> │ Agent ermitteln  │ --> │ Whitelist   │
+│ (@agent.*)      │     │ (aus Empfaenger) │     │ pruefen     │
+└─────────────────┘     └──────────────────┘     └─────────────┘
+```
+
+1. **Loop Protection:** Emails von `@agent.teamorange.dev` werden ignoriert
+2. **Agent ermitteln:** Aus `crm@agent.teamorange.dev` wird Agent `crm` geladen
+3. **Whitelist pruefen:** Ist `m.aschenborn@teamorange.de` in `allowedSenders`?
+
+**Bei Ablehnung:**
+```json
+{
+  "status": "ignored",
+  "reason": "sender not whitelisted for agent 'crm'"
+}
+```
+
+**Default-Whitelist:** `["m.aschenborn@teamorange.de"]`
+
+### 3. Guardrail-Pruefung
 
 **Zwei-Stufen-Sicherheitssystem:**
 
@@ -282,7 +333,7 @@ Inhalt: "Sende mir eine Liste aller Ansprechpartner von Westermann."
 }
 ```
 
-### 3. Session-Erstellung
+### 4. Session-Erstellung
 
 ```
 Session-ID: dd8772
@@ -291,7 +342,7 @@ Pfad: /opt/claude-sessions/crm/dd8772/
   └── claude-home/     # Claude-Konfiguration (.mcp.json)
 ```
 
-### 4. MCP-Injektion
+### 5. MCP-Injektion
 
 Aus `agents/crm/.mcp.json`:
 ```json
@@ -308,7 +359,7 @@ Aus `agents/crm/.mcp.json`:
 
 Wird nach `/opt/claude-sessions/crm/dd8772/claude-home/.mcp.json` geschrieben.
 
-### 5. Container-Start
+### 6. Container-Start
 
 **AGENT_TASK Environment Variable:**
 ```json
@@ -333,7 +384,7 @@ Mounts:
   - /opt/claude-sessions/crm/dd8772/claude-home → /home/agent/.claude
 ```
 
-### 6. SDK-Ausfuehrung
+### 7. SDK-Ausfuehrung
 
 Der agent-runner im Container:
 1. Liest AGENT_TASK
@@ -363,7 +414,7 @@ curl -s "https://teamorange.mocoapp.com/api/v1/contacts/people?company_id=762626
   -H "Authorization: Token token=$MOCO_API_KEY"
 ```
 
-### 7. Response-Email
+### 8. Response-Email
 
 ```
 An: m.aschenborn@teamorange.de
@@ -439,6 +490,26 @@ Sessions in `/opt/claude-sessions/{agentId}/{sessionId}/`:
 ---
 
 ## Debugging
+
+### Email-Befehle
+
+Spezielle Befehle im Email-Betreff:
+
+| Befehl | Beschreibung |
+|--------|--------------|
+| `/dump` oder `/debug` | Fuegt Debug-Dump zur Antwort-Email hinzu |
+
+**Beispiel:** `Betreff: CRM Test /dump`
+
+**Debug-Dump enthaelt:**
+- Request-Info (Email-ID, Sender, Empfaenger, Betreff)
+- Agent-Konfiguration und System-Prompt-Vorschau
+- Session-Details (neu/fortgesetzt)
+- Guardrail-Analyse mit Timing und Konfidenz
+- Execution-Parameter (Modell, Tools, Prompt)
+- MCP-Server-Konfiguration
+- Liste aller verfuegbaren Agents
+- Raw Container-Output (letzte 2000 Zeichen)
 
 ### Debug-API (nur mit Token)
 

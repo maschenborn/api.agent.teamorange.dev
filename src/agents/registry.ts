@@ -49,6 +49,12 @@ export interface AgentConfig {
   mcpConfig?: McpConfig;
   /** Path to agent directory */
   agentDir: string;
+  /**
+   * Allowed sender email addresses (whitelist)
+   * Default: ["m.aschenborn@teamorange.de"]
+   * Can be exact emails or domain patterns like "*@teamorange.de"
+   */
+  allowedSenders: string[];
 }
 
 // In-memory cache of loaded agents
@@ -92,6 +98,9 @@ function loadAgentFromDir(agentDir: string): AgentConfig | null {
       }
     }
 
+    // Default allowed sender - can be extended per agent
+    const defaultAllowedSenders = ['m.aschenborn@teamorange.de'];
+
     const agentConfig: AgentConfig = {
       id: config.id || agentId,
       name: config.name || agentId,
@@ -101,6 +110,7 @@ function loadAgentFromDir(agentDir: string): AgentConfig | null {
       env: config.env,
       mcpConfig,
       agentDir,
+      allowedSenders: config.allowedSenders || defaultAllowedSenders,
     };
 
     logger.debug({ agentId, hasMcp: !!mcpConfig }, 'Loaded agent configuration');
@@ -176,6 +186,7 @@ function getDefaultAgent(): AgentConfig {
     systemPrompt: 'Du bist ein Hilfs-Agent. Beantworte die Anfrage so gut wie moeglich auf Deutsch.',
     needsDocker: true,
     agentDir: '',
+    allowedSenders: ['m.aschenborn@teamorange.de'],
   };
 }
 
@@ -251,4 +262,32 @@ export function reloadAgentRegistry(): void {
  */
 export function getAgentsDir(): string {
   return AGENTS_DIR;
+}
+
+/**
+ * Check if a sender is allowed to use an agent
+ * @param sender - Email address of the sender (lowercase)
+ * @param agentConfig - Agent configuration with allowedSenders
+ * @returns true if sender is allowed
+ */
+export function isSenderAllowed(sender: string, agentConfig: AgentConfig): boolean {
+  const senderLower = sender.toLowerCase();
+
+  for (const pattern of agentConfig.allowedSenders) {
+    const patternLower = pattern.toLowerCase();
+
+    // Wildcard domain pattern: *@domain.de
+    if (patternLower.startsWith('*@')) {
+      const domain = patternLower.slice(2);
+      if (senderLower.endsWith(`@${domain}`)) {
+        return true;
+      }
+    }
+    // Exact match
+    else if (senderLower === patternLower) {
+      return true;
+    }
+  }
+
+  return false;
 }
