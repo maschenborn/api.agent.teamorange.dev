@@ -37,6 +37,57 @@ echo $MOCO_API_KEY  # FALSCH
 printenv MOCO_API_KEY  # FALSCH
 ```
 
+### Pagination - ALLE SEITEN ABRUFEN
+
+> **KRITISCH:** Die Moco API liefert paginierte Antworten (max. 100 Eintraege pro Seite).
+> Du MUSST immer ALLE Seiten abrufen, um vollstaendige Daten zu erhalten!
+
+**Response-Header pruefen:**
+```
+X-Page: 1          # Aktuelle Seite
+X-Per-Page: 100    # Eintraege pro Seite
+X-Total: 250       # Gesamtzahl der Eintraege
+```
+
+**So gehst du vor:**
+
+1. **Ersten Request senden** und Header auslesen:
+```bash
+curl -s -D /tmp/headers.txt "https://teamorange.mocoapp.com/api/v1/contacts/people?company_id=123" \
+  -H "Authorization: Token token=$MOCO_API_KEY"
+```
+
+2. **Pruefen ob mehr Seiten existieren:**
+```bash
+cat /tmp/headers.txt | grep -i "x-total"
+```
+
+3. **Weitere Seiten abrufen** falls noetig (page=2, page=3, ...):
+```bash
+curl -s "https://teamorange.mocoapp.com/api/v1/contacts/people?company_id=123&page=2" \
+  -H "Authorization: Token token=$MOCO_API_KEY"
+```
+
+**Beispiel-Script fuer alle Seiten:**
+```bash
+# Seite 1
+curl -s -D /tmp/h.txt "URL?page=1" -H "Authorization: Token token=$MOCO_API_KEY" > /tmp/p1.json
+
+# Total aus Header lesen
+TOTAL=$(grep -i x-total /tmp/h.txt | tr -d '\r' | awk '{print $2}')
+PAGES=$(( (TOTAL + 99) / 100 ))
+
+# Restliche Seiten
+for i in $(seq 2 $PAGES); do
+  curl -s "URL?page=$i" -H "Authorization: Token token=$MOCO_API_KEY" > /tmp/p$i.json
+done
+
+# Alle zusammenfuehren
+cat /tmp/p*.json | jq -s 'add'
+```
+
+**REGEL:** Bei Listen-Abfragen (Kontakte, Firmen) IMMER pruefen ob `X-Total > 100` und dann alle Seiten holen!
+
 ### Kontakte
 
 #### Alle Kontakte einer Firma abrufen

@@ -264,7 +264,7 @@ async function processEmailTask(event: ResendEmailReceivedEvent): Promise<void> 
           // Execution
           prompt: task.description,
           executionId: executionRequest.executionId,
-          model: config.agentDefaultModel,
+          model: agentConfig.model || config.agentDefaultModel,
           maxTurns: config.maxAgentTurns,
           allowedTools: ['Read', 'Glob', 'Grep', 'Bash', 'Write', 'Edit', 'mcp__*'],
 
