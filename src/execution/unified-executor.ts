@@ -612,11 +612,15 @@ function parseSdkOutput(output: string): ExecutionResult {
   try {
     // Find the last line that looks like a JSON result
     // The agent-runner outputs JSON on a single line at the end
+    // Note: Docker output may have control characters before the JSON
     const lines = cleanOutput.split('\n');
     for (let i = lines.length - 1; i >= 0; i--) {
       const line = lines[i].trim();
-      if (line.startsWith('{"success":')) {
-        const parsed: SdkTaskResult = JSON.parse(line);
+      // Find {"success": anywhere in the line (may have control chars before it)
+      const jsonStart = line.indexOf('{"success":');
+      if (jsonStart !== -1) {
+        const jsonStr = line.substring(jsonStart);
+        const parsed: SdkTaskResult = JSON.parse(jsonStr);
 
         return {
           success: parsed.success,
