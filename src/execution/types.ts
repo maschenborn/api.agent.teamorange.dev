@@ -85,6 +85,14 @@ export interface ExecutionResult {
   /** Authentication method used: oauth (subscription) or api_key (pay-as-you-go) */
   authMethod?: 'oauth' | 'api_key';
   rawOutput?: string;
+  /** Total cost in USD (from SDK) */
+  costUsd?: number;
+  /** Number of turns/iterations (from SDK) */
+  turns?: number;
+  /** Input tokens used */
+  inputTokens?: number;
+  /** Output tokens used */
+  outputTokens?: number;
 }
 
 // ============================================

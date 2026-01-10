@@ -184,6 +184,8 @@ function renderDebugDump(dump: DebugDump): string {
           <tr><td style="padding: 4px 0; color: #666;">Modell:</td><td><code>${escapeHtml(dump.model)}</code></td></tr>
           <tr><td style="padding: 4px 0; color: #666;">Max Turns:</td><td>${dump.maxTurns}</td></tr>
           <tr><td style="padding: 4px 0; color: #666;">Gesamtdauer:</td><td>${dump.totalDurationMs}ms (${(dump.totalDurationMs / 1000).toFixed(1)}s)</td></tr>
+          ${dump.turns !== undefined ? `<tr><td style="padding: 4px 0; color: #666;">Turns:</td><td>${dump.turns}</td></tr>` : ''}
+          ${dump.costUsd !== undefined ? `<tr><td style="padding: 4px 0; color: #666;">Kosten:</td><td><strong style="color: #c62828;">$${dump.costUsd.toFixed(4)}</strong> (${(dump.costUsd * 100).toFixed(2)} Cent)</td></tr>` : ''}
         </table>
         <h4 style="margin-bottom: 8px;">Erlaubte Tools:</h4>
         <p style="margin: 0;">${toolsList}</p>
@@ -216,7 +218,7 @@ function renderDebugDump(dump: DebugDump): string {
 
       ${dump.rawOutput ? `
       <div style="background: #f5f5f5; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-        <h3 style="margin-top: 0; color: #333;">Raw Output (letzte 2000 Zeichen)</h3>
+        <h3 style="margin-top: 0; color: #333;">Raw Output (letzte 10000 Zeichen)</h3>
         <pre style="background: #1e1e1e; color: #d4d4d4; padding: 10px; border-radius: 4px; overflow-x: auto; white-space: pre-wrap; font-size: 10px; max-height: 400px; overflow-y: auto;">${escapeHtml(dump.rawOutput)}</pre>
       </div>
       ` : ''}

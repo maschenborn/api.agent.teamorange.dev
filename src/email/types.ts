@@ -144,7 +144,10 @@ export interface DebugDump {
     email: string;
   }>;
 
-  // Timing
+  // Timing & Cost
   totalDurationMs: number;
-  rawOutput?: string; // Last 2000 chars
+  turns?: number;
+  costUsd?: number;
+
+  rawOutput?: string; // Last 10000 chars
 }

@@ -603,7 +603,8 @@ function parseSdkOutput(output: string): ExecutionResult {
   // Try to parse SDK JSON result
   try {
     // Find last JSON object in output (the result)
-    const jsonMatches = cleanOutput.match(/\{[^{}]*"success"[^{}]*\}/g);
+    // Match the final result JSON that agent-runner.ts outputs
+    const jsonMatches = cleanOutput.match(/\{"success":(true|false),"sessionId":"[^"]*","output":"[^"]*"[^}]*\}/g);
     if (jsonMatches && jsonMatches.length > 0) {
       const lastJson = jsonMatches[jsonMatches.length - 1];
       const parsed: SdkTaskResult = JSON.parse(lastJson);
@@ -614,6 +615,8 @@ function parseSdkOutput(output: string): ExecutionResult {
         filesModified: [],
         authMethod: 'api_key', // SDK always uses API key
         rawOutput: cleanOutput.slice(-10000),
+        costUsd: parsed.cost,
+        turns: parsed.turns,
       };
     }
   } catch (e) {

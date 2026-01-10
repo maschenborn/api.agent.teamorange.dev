@@ -278,8 +278,11 @@ async function processEmailTask(event: ResendEmailReceivedEvent): Promise<void> 
             email: `${a.id}@agent.teamorange.dev`,
           })),
 
-          // Timing
+          // Timing & Cost
           totalDurationMs: Date.now() - startTime,
+          turns: result.turns,
+          costUsd: result.costUsd,
+
           rawOutput: result.rawOutput?.slice(-10000),
         };
       }
