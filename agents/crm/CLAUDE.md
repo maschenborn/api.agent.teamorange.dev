@@ -97,10 +97,29 @@ cat /tmp/p*.json | jq -s 'add'
 
 ### Kontakte
 
-#### Alle Kontakte einer Firma abrufen
+> **WICHTIG:** Die Moco API unterstuetzt KEINEN `company_id` Filter fuer Kontakte!
+> Verwende stattdessen `term=FIRMENNAME` und filtere mit jq nach `company.id`.
+
+#### Alle Kontakte einer Firma abrufen (2-Schritt-Verfahren)
+
+**Schritt 1:** Firma suchen und ID merken
 ```bash
-curl -s "https://teamorange.mocoapp.com/api/v1/contacts/people?company_id=FIRMA_ID" \
-  -H "Authorization: Token token=$(printenv MOCO_API_KEY)"
+curl -s "https://teamorange.mocoapp.com/api/v1/companies?term=FIRMENNAME" \
+  -H "Authorization: Token token=$(printenv MOCO_API_KEY)" | jq '.[0].id'
+```
+
+**Schritt 2:** Kontakte mit Firmennamen suchen und filtern
+```bash
+curl -s "https://teamorange.mocoapp.com/api/v1/contacts/people?term=FIRMENNAME" \
+  -H "Authorization: Token token=$(printenv MOCO_API_KEY)" \
+  | jq '.[] | select(.company.id == FIRMA_ID)'
+```
+
+**Beispiel: Kontakte von Westermann (ID: 762424670)**
+```bash
+curl -s "https://teamorange.mocoapp.com/api/v1/contacts/people?term=Westermann" \
+  -H "Authorization: Token token=$(printenv MOCO_API_KEY)" \
+  | jq '.[] | select(.company.id == 762424670) | {id, firstname, lastname, job_position, work_email}'
 ```
 
 #### Kontakt suchen (Name oder Email)
@@ -108,6 +127,7 @@ curl -s "https://teamorange.mocoapp.com/api/v1/contacts/people?company_id=FIRMA_
 curl -s "https://teamorange.mocoapp.com/api/v1/contacts/people?term=SUCHBEGRIFF" \
   -H "Authorization: Token token=$(printenv MOCO_API_KEY)"
 ```
+> **Hinweis:** `term` durchsucht: Vorname, Nachname, E-Mail UND Firmenname
 
 #### Kontakt Details abrufen
 ```bash
