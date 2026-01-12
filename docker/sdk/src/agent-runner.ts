@@ -277,9 +277,14 @@ async function runAgent(): Promise<void> {
             if (pending) {
               // Extract output (first 500 chars to avoid huge logs)
               let output = "";
-              if (Array.isArray(block.content)) {
-                for (const c of block.content) {
-                  if ("text" in c) {
+              const content = block.content;
+              if (typeof content === "string") {
+                output = content;
+              } else if (Array.isArray(content)) {
+                for (const c of content) {
+                  if (typeof c === "string") {
+                    output += c;
+                  } else if (c && typeof c === "object" && "text" in c) {
                     output += c.text;
                   }
                 }
